@@ -26,4 +26,3 @@ calculateSharedSeed pub priv
     | pubParams pub /= privParams priv = Nothing
     | otherwise = Just $ mod (pubKey pub ^ secret priv) $ prime $ privParams priv
 
-
