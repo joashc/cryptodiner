@@ -21,6 +21,10 @@ data GroupParameters = GroupParameters {
     prime :: Integer
 } deriving (Eq, Show)
 
+-- Bytes per round
+roundBytes :: Int
+roundBytes = 256
+
 -- Modular exponentiation, b^e mod m, binary shift method
 modExp :: Integer -> Integer -> Integer -> Integer
 modExp _ 0 _ = 1
@@ -51,7 +55,7 @@ sendMessage seeds msg = foldl (\acc stream -> liftM (strXor stream) acc) msg str
     where streams =  rights $ map keyData seeds
 
 keyData :: Integer -> Either GenError B.ByteString
-keyData = randomBytes 1024 . intBytes
+keyData = randomBytes roundBytes . intBytes
 
 data Participant = Participant {
     privateKey :: PrivateKey,
@@ -61,6 +65,14 @@ data Participant = Participant {
 
 duplicateKeys :: [PrivateKey] -> Bool
 duplicateKeys ks = length (nub ks) /= length ks
+
+-- Pad the message to avoid leaking message length
+padString :: String -> String
+padString s
+    | len == roundBytes = s
+    | len > roundBytes = take roundBytes s
+    | len < roundBytes = s ++ (take (roundBytes - len) $ repeat ' ')
+    where len = length s
 
 keyExchange :: [PrivateKey] -> [Participant]
 keyExchange keys
@@ -72,6 +84,6 @@ ikePrime1536 = 24103124269210325884494533075464845041303547135239139903294748561
 
 generateStream :: String -> Int -> Participant -> Either GenError B.ByteString
 generateStream msg roundNo p
-    | turnToTransmit = sendMessage [pubKey k | k <- otherKeys $ p] $ Right . strBytes $  msg
+    | turnToTransmit = sendMessage [pubKey k | k <- otherKeys $ p] $ Right . strBytes $ padString msg
     | not turnToTransmit = sendMessage [pubKey k | k <- tail . otherKeys $ p] $ keyData . pubKey . head . otherKeys $ p
     where turnToTransmit = head [snd r | r <- reservations p, fst r == roundNo]
