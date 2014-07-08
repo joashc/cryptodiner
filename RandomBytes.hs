@@ -13,6 +13,7 @@ strBytes = Data.ByteString.Char8.pack
 intBytes :: Integer -> B.ByteString
 intBytes i = toStrict $ encode (i :: Integer) 
 
+
 strXor :: B.ByteString -> B.ByteString -> B.ByteString
 strXor x = B.pack . B.zipWith xor x
 
