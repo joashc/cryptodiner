@@ -1,4 +1,4 @@
-module RandomBytes (randomBytes, strXor, strBytes, intBytes) where
+module RandomBytes (randomBytes, strXor, strBytes, intBytes, systemRandomByte) where
 import Crypto.Random
 import Crypto.Random.DRBG
 import Data.ByteString.Char8
@@ -31,6 +31,6 @@ systemRandomByte = do
     g <- newGenIO :: IO SystemRandom
     case genBytes 1 g of
         Left err -> error $ show err
-        Right (randomBytes, g) -> return $ fromIntegral . Prelude.head . B.unpack $ randomBytes :: IO Int
+        Right (randByte, _) -> return $ fromIntegral . Prelude.head . B.unpack $ randByte :: IO Int
 
 
