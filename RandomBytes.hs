@@ -23,3 +23,14 @@ randomBytes len seed = do
             gen <- newGen seed :: Either GenError HashDRBG
             let Right (bytes, _) = genBytes len gen
             return bytes
+
+-- Generate a random byte using system-provided entropy
+-- TODO: increase the output space size
+systemRandomByte :: IO Int
+systemRandomByte = do
+    g <- newGenIO :: IO SystemRandom
+    case genBytes 1 g of
+        Left err -> error $ show err
+        Right (randomBytes, g) -> return $ fromIntegral . Prelude.head . B.unpack $ randomBytes :: IO Int
+
+
