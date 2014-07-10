@@ -67,7 +67,6 @@ duplicates :: Eq a => [a] -> Bool
 duplicates xs = length (nub xs) /= length xs
 
 -- Pad the message to avoid leaking message length
-padString :: String -> String
 padString s
     | len == roundBytes = s
     | len > roundBytes = take roundBytes s
@@ -82,24 +81,28 @@ keyExchange keys
 
 generateStream :: String -> Integer -> Participant -> Either GenError B.ByteString
 generateStream msg roundNo p
-    | turnToTransmit = sendMessage [pubKey k | k <- otherKeys $ p] $ Right . strBytes $ padString msg
+    | turnToTransmit = sendMessage [pubKey k | k <- otherKeys p] $ Right . strBytes $ padString msg
     | not turnToTransmit = sendMessage [pubKey k | k <- tail . otherKeys $ p] $ keyData . pubKey . head . otherKeys $ p
     where turnToTransmit = elem roundNo $ reservations p
 
 generateStreams :: String -> Integer -> [Participant] -> [Either GenError B.ByteString]
-generateStreams msg roundNo = map (generateStream msg roundNo)
+generateStreams msg roundNo = map $ generateStream msg roundNo
 
 combineStreams :: [Either GenError B.ByteString] -> B.ByteString
-combineStreams streams = foldl1 (\acc stream -> strXor acc stream) (rights streams)
+combineStreams streams = foldl1 (\acc stream -> strXor acc stream) $ rights streams
 
 -- Round negotiation
-roundSpace :: Int
 roundSpace = roundBytes
 
-reserveRounds :: [Integer] -> B.ByteString
-reserveRounds rounds 
-    | duplicates rounds = intBytes 0
-    | otherwise = foldr (\r acc -> strXor acc $ intBytes $ 2^(8*r)) (intBytes . head $ rounds) (tail rounds)
+reserveRounds :: [Int] -> Integer
+reserveRounds rounds
+    | duplicates rounds = 0
+    | otherwise = foldr (\r acc -> xor acc $ setBit 0 r) 0 rounds
+
+getRounds :: Integer -> [Int]
+getRounds r = map fst $ filter (\(_, set) -> set) reservations
+    where isSet bits = testBit (fromIntegral bits :: Integer)
+          reservations = map (\x -> (x, isSet r x)) [0..roundSpace - 1]
 
 -- Testing
 ikePrime1536 :: Integer
