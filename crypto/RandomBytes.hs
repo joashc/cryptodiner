@@ -1,9 +1,8 @@
 module RandomBytes (randomBytes, strXor, strBytes, intBytes, systemRandomByte) where
-import Crypto.Random
 import Crypto.Random.DRBG
 import Data.ByteString.Char8
-import Data.Binary 
-import Data.Bits 
+import Data.Binary
+import Data.Bits
 import Data.ByteString as B
 import Data.ByteString.Lazy as BL
 
@@ -11,7 +10,7 @@ strBytes :: String -> B.ByteString
 strBytes = Data.ByteString.Char8.pack
 
 intBytes :: Integer -> B.ByteString
-intBytes i = toStrict $ encode (i :: Integer) 
+intBytes i = toStrict $ encode (i :: Integer)
 
 
 strXor :: B.ByteString -> B.ByteString -> B.ByteString
