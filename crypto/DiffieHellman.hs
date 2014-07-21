@@ -1,5 +1,7 @@
+{-# LANGUAGE DeriveGeneric #-}
 module DiffieHellman (PrivateKey(..), PublicKey(..), GroupParameters(..), Seed, calculatePublicKey, calculateSharedSeed, sendMessage, keyData) where
 import RandomBytes
+import GHC.Generics (Generic)
 import Data.Bits
 import Data.ByteString as B (ByteString)
 import Crypto.Random.DRBG
@@ -18,12 +20,12 @@ data PrivateKey = PrivateKey {
 data PublicKey = PublicKey {
     pubKey :: Integer,
     pubParams :: GroupParameters
-} deriving (Eq, Show)
+} deriving (Eq, Show, Generic)
 
 data GroupParameters = GroupParameters {
     generator :: Integer,
     prime :: Integer
-} deriving (Eq, Show)
+} deriving (Eq, Show, Generic)
 
 -- Modular exponentiation, b^e mod m, binary shift method
 modExp :: Integer -> Integer -> Integer -> Integer
