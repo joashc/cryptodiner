@@ -1,64 +1,55 @@
 {-# LANGUAGE DeriveGeneric #-}
 import Network
-import Data.Aeson (FromJSON, ToJSON, decode, encode)
+import Messaging
+import Data.Serialize
 import System.IO
+import Data.ByteString.Internal as I
+import Data.ByteString.Lazy as BL (toStrict)
+import Data.ByteString.Lazy.Char8 as C (pack)
 import Control.Concurrent
 import DcNetworkExample
 import DiffieHellman
-import qualified Data.ByteString.Lazy as BL (toChunks, ByteString)
-import qualified Data.ByteString as B (concat, ByteString)
-import qualified Data.ByteString.Char8 as C (hPutStrLn)
-import GHC.Generics
+
+data ServerState = ServerState {
+    peers :: [Participant'],
+    status :: ServerStatus
+}
 
 privateKey = PrivateKey 54238578399943587349 gp
 
-data Participant' = Participant' { 
-    pubKey :: PublicKey,
-    ipAddress :: IpAddress,
-    port :: Int
-} deriving (Show, Generic)
-
-instance FromJSON Participant'
-instance ToJSON Participant'
-instance FromJSON GroupParameters
-instance ToJSON GroupParameters
-instance FromJSON PublicKey
-instance ToJSON PublicKey
-
-data ServerStatus = Peering | RoundNegotiation | Transmitting | Closed
-type IpAddress = String
+createParticipant :: Integer -> IpAddress -> PortNumber -> Participant'
+createParticipant e ip port = Participant' pubKey ip $ fromIntegral port
+    where pubKey = PublicKey e gp
 
 main :: IO ()
 main = withSocketsDo $ do
     state <- newEmptyMVar
-    putMVar state []
+    putMVar state $ ServerState [] Peering
     let port = 6968
     putStrLn $ "Listening on port " ++ show port
     socket <- listenOn $ PortNumber port
     socketHandler state socket
 
-socketHandler :: MVar [Participant'] -> Socket -> IO ()
+socketHandler :: MVar ServerState -> Socket -> IO ()
 socketHandler state s = do
     (handle, addr, port) <- accept s
     putStrLn $ show addr ++ " connected."
     forkIO $ connectionHandler state addr port handle 
     socketHandler state s
 
-connectionHandler :: MVar [Participant'] -> IpAddress -> PortNumber -> Handle -> IO ()
+connectionHandler :: MVar ServerState -> IpAddress -> PortNumber -> Handle -> IO ()
 connectionHandler state ip port h = do
-    e <- hGetLine h
+    e <- hGetContents h
+    let msg = decode . BL.toStrict . C.pack $ e :: Either String Message
     hPutStrLn h $ "Recieved Public Key: " ++ e
-    let exp = fromIntegral (read $ e :: Integer)
-    let newParticipant = createParticipant exp ip port
-    ps <- takeMVar state
-    let newPs = newParticipant:ps
-    putMVar state newPs
-    C.hPutStrLn h (toStrict $ encode newPs)
+    case messageType . header $ Right msg of
+        KeyExchange -> keyExchangeHandler (messageBody e) state ip port h
     hClose h
 
-createParticipant :: Integer -> IpAddress -> PortNumber -> Participant'
-createParticipant e ip port = Participant' pubKey ip $ fromIntegral port
-    where pubKey = PublicKey e gp
-
-toStrict :: BL.ByteString -> B.ByteString
-toStrict = B.concat . BL.toChunks
+keyExchangeHandler :: I.ByteString -> MVar ServerState -> IpAddress -> PortNumber -> Handle -> IO ()
+keyExchangeHandler b state ip port handle = do
+    let body = decode b
+    let peer = decode $ body :: Maybe PublicKey
+    s <- takeMVar state
+    let newPs = peer:(peers s)
+    putMVar state s{peers = newPs}
