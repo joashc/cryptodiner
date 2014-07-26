@@ -39,17 +39,26 @@ socketHandler state s = do
 
 connectionHandler :: MVar ServerState -> IpAddress -> PortNumber -> Handle -> IO ()
 connectionHandler state ip port h = do
-    e <- hGetContents h
+    e <- hGetLine h
     let msg = decode . BL.toStrict . C.pack $ e :: Either String Message
-    hPutStrLn h $ "Recieved Public Key: " ++ e
-    case messageType . header $ Right msg of
-        KeyExchange -> keyExchangeHandler (messageBody e) state ip port h
+    case msg of
+        Right m -> messageHandler m state ip port h
+        Left e -> do
+            hPutStrLn h $ "Could not parse message: " ++ e
     hClose h
 
-keyExchangeHandler :: I.ByteString -> MVar ServerState -> IpAddress -> PortNumber -> Handle -> IO ()
-keyExchangeHandler b state ip port handle = do
-    let body = decode b
-    let peer = decode $ body :: Maybe PublicKey
-    s <- takeMVar state
-    let newPs = peer:(peers s)
-    putMVar state s{peers = newPs}
+messageHandler :: Message -> MVar ServerState -> IpAddress -> PortNumber -> Handle -> IO ()
+messageHandler m state ip port h = case messageType . header $ m of
+    KeyExchange -> keyExchangeHandler (decode $ messageBody m :: Either String PublicKey) state ip port h
+
+keyExchangeHandler :: Either String PublicKey -> MVar ServerState -> IpAddress -> PortNumber -> Handle -> IO ()
+keyExchangeHandler key state ip port handle = do
+    case key of
+        Right p -> do
+                     let peer = Participant' p ip (fromIntegral port :: Int)
+                     s <- takeMVar state
+                     print peer
+                     let newPs = peer:(peers s)
+                     putMVar state s{peers = newPs}
+        Left e -> do
+                     hPutStrLn handle $ "Could not parse public key: " ++ e
