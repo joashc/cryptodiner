@@ -3,9 +3,11 @@ import Network
 import Messaging
 import Data.Serialize
 import System.IO
+import System.Environment
 import Data.ByteString.Internal as I
 import Data.ByteString.Lazy as BL (toStrict)
-import Data.ByteString.Lazy.Char8 as C (pack)
+import qualified Data.ByteString.Lazy.Char8 as C (pack, unpack, hPutStrLn)
+import qualified Data.ByteString.Char8 as CS (unpack)
 import Control.Concurrent
 import DcNetworkExample
 import DiffieHellman
@@ -22,7 +24,24 @@ createParticipant e ip port = Participant' pubKey ip $ fromIntegral port
     where pubKey = PublicKey e gp
 
 main :: IO ()
-main = withSocketsDo $ do
+main = getArgs >>= parseArgs
+
+parseArgs :: [String] -> IO ()
+parseArgs ["-p"] = peerMode
+parseArgs _ = serverMode
+
+peerMode :: IO ()
+peerMode = withSocketsDo $ do
+    putStrLn "Enter public key:"
+    p <- getLine
+    let pubKey = PublicKey (read p :: Integer) gp
+    let message = Message (Header KeyExchange 454) $ encode pubKey
+    handle <- connectTo "127.0.0.1" $ PortNumber 6968
+    hPutStrLn handle $ CS.unpack (encode message)
+    print $ encode message
+
+serverMode :: IO ()
+serverMode = withSocketsDo $ do
     state <- newEmptyMVar
     putMVar state $ ServerState [] Peering
     let port = 6968
@@ -57,8 +76,8 @@ keyExchangeHandler key state ip port handle = do
         Right p -> do
                      let peer = Participant' p ip (fromIntegral port :: Int)
                      s <- takeMVar state
-                     print peer
                      let newPs = peer:(peers s)
                      putMVar state s{peers = newPs}
+                     print newPs
         Left e -> do
                      hPutStrLn handle $ "Could not parse public key: " ++ e
