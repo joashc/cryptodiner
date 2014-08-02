@@ -1,34 +1,43 @@
 {-# LANGUAGE DeriveGeneric #-}
-module Messaging (Participant'(..), IpAddress, ServerStatus(..), Message(..), Header(..), MessageType(..)) where
+module Messaging (Participant'(..), IpAddress, ServerStatus(..), Message(..), MessageType(..), decodeMessage, send) where
 import Data.Serialize
+import System.IO
 import DiffieHellman
 import Data.ByteString.Internal as I
+import Data.ByteString.Lazy as BL (toStrict)
+import qualified Data.ByteString.Lazy.Char8 as C (pack, unpack, hPutStrLn)
+import qualified Data.ByteString.Char8 as CS (unpack)
 import GHC.Generics
+import Network
 
 data ServerStatus = Peering | RoundNegotiation | Transmitting | Closed
-instance Serialize MessageType
-data MessageType = Ping | KeyExchange deriving (Show, Generic, Eq)
+data MessageType = Ping | KeyExchange | PeerList | RequestStream | Stream | CombinedStream deriving (Show, Generic, Eq)
 
 instance Serialize PublicKey
 instance Serialize GroupParameters
+instance Serialize Message
+instance Serialize MessageType
+instance Serialize Participant'
 
-instance Serialize Header
-data Header = Header {
-    messageType :: MessageType,
-    timestamp :: Integer
-} deriving (Show, Generic)
+send :: HostName -> PortNumber -> Message -> IO()
+send ip port m = withSocketsDo $ do
+    handle <- connectTo ip $ PortNumber port
+    hPutStrLn handle $ CS.unpack $ encode m
+
+decodeMessage :: String -> Either String Message
+decodeMessage s = decode . BL.toStrict . C.pack $ s :: Either String Message
 
 type IpAddress = String
 
-instance Serialize Participant'
 data Participant' = Participant' {
-    pubKey :: PublicKey,
+    pubKey' :: PublicKey,
     ipAddress :: IpAddress,
-    port :: Int
+    port' :: Int
 } deriving (Show, Generic)
 
-instance Serialize Message
 data Message = Message {
-    header :: Header,
-    messageBody :: I.ByteString
-} deriving (Show, Generic)
+    messageType :: MessageType,
+    messageBody :: I.ByteString,
+    portNum :: Int
+} deriving (Generic, Show)
+

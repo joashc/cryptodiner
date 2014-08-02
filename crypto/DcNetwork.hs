@@ -1,4 +1,4 @@
-module DcNetwork (Participant(..), keyExchange, generateStream, generateStreams, combineStreams) where
+module DcNetwork (Participant(..), keyExchange, generateStream, generateStreams, combineStreams, generateSingleStream, xorStreams) where
 import DiffieHellman
 import Crypto.Random.DRBG
 import Data.List (nub)
@@ -32,6 +32,11 @@ keyExchange keys
     | duplicates keys = [] -- We should abort the key exchange if there are duplicate keys
     | otherwise = map (\k -> Participant k  [calculatePublicKey key | key <- keys, k /= key] 0) keys
 
+generateSingleStream :: String -> PrivateKey -> [PublicKey] -> Either GenError B.ByteString
+generateSingleStream message privKey keys = 
+    sendMessage seeds $ Right . strBytes $ padString message
+    where seeds = rights $ calculateSharedSeeds privKey keys
+
 generateStream :: String -> Int -> Participant -> Either GenError B.ByteString
 generateStream msg roundNo p
     | turnToTransmit = sendMessage [pubKey k | k <- otherKeys p] $ Right . strBytes $ padString msg
@@ -43,6 +48,9 @@ generateStreams msg roundNo = map $ generateStream msg roundNo
 
 combineStreams :: [Either GenError B.ByteString] -> B.ByteString
 combineStreams streams = foldl1 strXor $ rights streams
+
+xorStreams :: [B.ByteString] -> B.ByteString
+xorStreams streams = foldl1 strXor streams
 
 -- Round negotiation
 roundSpace = roundBytes

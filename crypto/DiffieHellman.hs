@@ -1,5 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
-module DiffieHellman (PrivateKey(..), PublicKey(..), GroupParameters(..), Seed, calculatePublicKey, calculateSharedSeed, sendMessage, keyData) where
+module DiffieHellman (PrivateKey(..), PublicKey(..), GroupParameters(..), Seed, calculatePublicKey, calculateSharedSeed, sendMessage, keyData, calculateSharedSeeds) where
 import RandomBytes
 import GHC.Generics (Generic)
 import Data.Bits
@@ -41,15 +41,15 @@ calculatePublicKey priv =
           p = prime $ privParams priv
 
 type Seed = Integer
-calculateSharedSeed :: PrivateKey -> PublicKey -> Maybe Seed
+calculateSharedSeed :: PrivateKey -> PublicKey -> Either String Seed
 calculateSharedSeed priv pub
-    | pubParams pub /= privParams priv = Nothing
-    | otherwise = Just $ modExp base e p
+    | pubParams pub /= privParams priv = Left "Error calculating shared seed"
+    | otherwise = Right $ modExp base e p
     where base = pubKey pub
           e  = secretExponent priv
           p = prime $ privParams priv
 
-calculateSharedSeeds :: PrivateKey -> [PublicKey] -> [Maybe Seed]
+calculateSharedSeeds :: PrivateKey -> [PublicKey] -> [Either String Seed]
 calculateSharedSeeds privKey = map (calculateSharedSeed privKey)
 
 sendMessage :: [Seed] -> Either GenError B.ByteString -> Either GenError B.ByteString
