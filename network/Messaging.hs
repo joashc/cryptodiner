@@ -11,7 +11,7 @@ import GHC.Generics
 import Network
 
 data ServerStatus = Peering | RoundNegotiation | Transmitting | Closed
-data MessageType = Ping | KeyExchange | PeerList | RequestStream | Stream | CombinedStream deriving (Show, Generic, Eq)
+data MessageType = Ping | KeyExchange | PeerList | RequestStream | Stream | CombinedStream | RequestReservation | Reservation deriving (Show, Generic, Eq)
 
 instance Serialize PublicKey
 instance Serialize GroupParameters

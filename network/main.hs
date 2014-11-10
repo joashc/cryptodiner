@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveGeneric #-}
 import Network
 import Messaging
 import RandomBytes
@@ -37,14 +36,14 @@ peerMode :: IO ()
 peerMode = withSocketsDo $ do
     state <- newEmptyMVar
     p <- systemRandomBytes 768
-    putStrLn $ "Using private key: " ++ (show p)
+    putStrLn $ "Using private key: " ++ show p
     let privKey = PrivateKey p gp
     let pubKey = calculatePublicKey privKey
     putStrLn "Enter port:"
     portNum <- getLine
     let port = read portNum :: Int
     putMVar state $ ServerState [] Peering 0 [] port privKey
-    let message = Message KeyExchange (encode $ pubKey) port
+    let message = Message KeyExchange (encode pubKey) port
     send "127.0.0.1" 6968 message
     putStrLn $ "Listening on port " ++ show port
     socket <- listenOn $ PortNumber (toEnum port)
@@ -63,11 +62,11 @@ peerSocketHandler state s = withSocketsDo $ do
 
 serverMode :: IO ()
 serverMode = withSocketsDo $ do
-    putStrLn $ "Participants: "
+    putStrLn "Participants: "
     groupSize <- getLine
     state <- newEmptyMVar
     p <- systemRandomBytes 768
-    putStrLn $ "Using private key: " ++ (show p)
+    putStrLn $ "Using private key: " ++ show p
     let privKey = PrivateKey p gp
     putMVar state $ ServerState [] Peering (read groupSize :: Int) [] 6968 privKey
     let port = 6968
@@ -92,35 +91,36 @@ connectionHandler state ip port h = do
 
 messageHandler :: Message -> MVar ServerState -> IpAddress -> PortNumber -> Handle -> IO ()
 messageHandler m state ip port h = do
-    print $ "Recieved " ++ (show $ messageType m) ++ " message"
+    print $ "Recieved " ++ show (messageType m) ++ " message"
     case messageType m of
         KeyExchange -> keyExchangeHandler (decode $ messageBody m :: Either String PublicKey) state ip (portNum m) h
         PeerList -> peerListHandler (decode $ messageBody m :: Either String [Participant']) state
         RequestStream -> requestTransmissionHandler state ip (toEnum $ portNum m :: PortNumber)
         Stream -> streamHandler (decode $ messageBody m :: Either String B.ByteString) state
+        --Reservation -> reservationHandler (decode $ messageBody m :: Either String Integer) state
+        --RequestReservation -> reservationHandler (decode $ messageBody m :: Either String Integer) state
 
 appendParticipants :: [Participant'] -> MVar ServerState -> IO ()
 appendParticipants ps state = do
         s <- takeMVar state
         let newPs = ps ++ peers s
         putMVar state s{peers = newPs}
-        case length newPs == groupSize s of
-            True -> sendPeerList state
-            False -> putStrLn "Waiting for more peers"
+        if length newPs == groupSize s
+            then sendPeerList state
+            else putStrLn "Waiting for more peers"
 
 keyExchangeHandler :: Either String PublicKey -> MVar ServerState -> IpAddress -> Int -> Handle -> IO ()
-keyExchangeHandler key state ip port handle = do
+keyExchangeHandler key state ip port handle =
     case key of
         Right p -> do
                      let peer = [Participant' p ip port]
                      appendParticipants peer state
-        Left e -> do
-                     hPutStrLn handle $ "Could not parse public key: " ++ e
+        Left e -> hPutStrLn handle $ "Could not parse public key: " ++ e
 
 peerListHandler :: Either String [Participant'] -> MVar ServerState -> IO ()
 peerListHandler (Right ps) state = do
         s <- takeMVar state
-        forkIO $ appendParticipants [p | p <- ps, (port' p) /= (listenPort s)] state
+        forkIO $ appendParticipants [p | p <- ps, port' p /= listenPort s] state
         putMVar state s
 peerListHandler (Left e) state = putStrLn $ "Could not add participants: " ++ e
 
@@ -142,11 +142,11 @@ streamHandler (Right stream) state = streamReciever stream state
 streamReciever :: B.ByteString -> MVar ServerState -> IO ()
 streamReciever stream s = do
     state <- takeMVar s
-    let streams = stream:(roundStreams state)
+    let streams = stream:roundStreams state
     putMVar s state{ roundStreams = streams }
-    case (length streams == groupSize state) of
-        True -> broadcastRoundResult s
-        False -> putStrLn "Waiting for the rest of the peers"
+    if length streams == groupSize state
+        then broadcastRoundResult s
+        else putStrLn "Waiting for the rest of the peers"
 
 broadcastRoundResult :: MVar ServerState -> IO ()
 broadcastRoundResult s = withSocketsDo $ do
@@ -162,5 +162,6 @@ sendPeerList s = withSocketsDo $ do
     let ps = peers state
     mapM_ (\p -> forkIO $ send (ipAddress p) (toEnum $ port' p :: PortNumber) $ Message PeerList (encode $ peers state) $ listenPort state) ps
     print $ listenPort state
+    mapM_ (\p -> forkIO $ send (ipAddress p) (toEnum $ port' p :: PortNumber) $ Message RequestReservation (encode $ peers state) $ listenPort state) ps
     mapM_ (\p -> forkIO $ send (ipAddress p) (toEnum $ port' p :: PortNumber) $ Message RequestStream (encode $ peers state) $ listenPort state) ps
     putMVar s state{status=Transmitting}
