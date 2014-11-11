@@ -1,10 +1,11 @@
-module RandomBytes (randomBytes, strXor, strBytes, intBytes, systemRandomByte) where
+module RandomBytes (randomBytes, strXor, strBytes, intBytes, systemRandomByte, systemRandomBytes) where
 import Crypto.Random.DRBG
 import Data.ByteString.Char8
 import Data.Binary
 import Data.Bits
 import Data.ByteString as B
 import Data.ByteString.Lazy as BL
+import Numeric
 
 strBytes :: String -> B.ByteString
 strBytes = Data.ByteString.Char8.pack
@@ -16,7 +17,6 @@ intBytes i = toStrict $ encode (i :: Integer)
 strXor :: B.ByteString -> B.ByteString -> B.ByteString
 strXor x = B.pack . B.zipWith xor x
 
--- How do you get a stream?
 randomBytes :: Int -> B.ByteString -> Either GenError B.ByteString
 randomBytes len seed = do
             gen <- newGen seed :: Either GenError HashDRBG
@@ -30,6 +30,12 @@ systemRandomByte = do
     g <- newGenIO :: IO SystemRandom
     case genBytes 1 g of
         Left err -> error $ show err
-        Right (randByte, _) -> return $ fromIntegral . Prelude.head . B.unpack $ randByte :: IO Int
+        Right (randByte, _) -> return . fromIntegral . Prelude.head . B.unpack $ randByte :: IO Int
+
+systemRandomBytes byteLength = do
+    g <- newGenIO :: IO SystemRandom
+    case genBytes byteLength g of
+        Left err -> error $ show err
+        Right (randByte, _) -> return . fst . Prelude.head . readHex . Prelude.concat . Prelude.map (flip showHex "") . B.unpack $ randByte
 
 

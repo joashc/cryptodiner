@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 import Network
 import Messaging
+import RandomBytes
 import Data.Serialize
 import System.IO
 import System.Environment
@@ -35,9 +36,9 @@ parseArgs _ = serverMode
 peerMode :: IO ()
 peerMode = withSocketsDo $ do
     state <- newEmptyMVar
-    putStrLn "Enter private key:"
-    p <- getLine
-    let privKey = PrivateKey (read p :: Integer) gp
+    p <- systemRandomBytes 768
+    putStrLn $ "Using private key: " ++ (show p)
+    let privKey = PrivateKey p gp
     let pubKey = calculatePublicKey privKey
     putStrLn "Enter port:"
     portNum <- getLine
@@ -65,7 +66,10 @@ serverMode = withSocketsDo $ do
     putStrLn $ "Participants: "
     groupSize <- getLine
     state <- newEmptyMVar
-    putMVar state $ ServerState [] Peering (read groupSize :: Int) [] 6968 serverPrivateKey
+    p <- systemRandomBytes 768
+    putStrLn $ "Using private key: " ++ (show p)
+    let privKey = PrivateKey p gp
+    putMVar state $ ServerState [] Peering (read groupSize :: Int) [] 6968 privKey
     let port = 6968
     putStrLn $ "Listening on port " ++ show port
     socket <- listenOn $ PortNumber port
