@@ -23,6 +23,7 @@ send :: HostName -> PortNumber -> Message -> IO()
 send ip port m = withSocketsDo $ do
     handle <- connectTo ip $ PortNumber port
     hPutStrLn handle $ CS.unpack $ encode m
+    hClose handle
 
 decodeMessage :: String -> Either String Message
 decodeMessage s = decode . BL.toStrict . C.pack $ s :: Either String Message
