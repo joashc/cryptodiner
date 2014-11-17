@@ -4,9 +4,7 @@ import RandomBytes
 import GHC.Generics (Generic)
 import Data.Bits
 import Data.ByteString as B (ByteString)
-import Crypto.Random.DRBG
-import Control.Monad
-import Data.Either
+import Control.Applicative
 
 -- Bytes per round
 roundBytes :: Int
@@ -49,12 +47,11 @@ calculateSharedSeed priv pub
           e  = secretExponent priv
           p = prime $ privParams priv
 
-calculateSharedSeeds :: PrivateKey -> [PublicKey] -> [Either String Seed]
-calculateSharedSeeds privKey = map (calculateSharedSeed privKey)
+calculateSharedSeeds :: PrivateKey -> [PublicKey] -> Either String [Seed]
+calculateSharedSeeds privKey pubKeys = sequence $ calculateSharedSeed privKey <$> pubKeys
 
-sendMessage :: [Seed] -> Either GenError B.ByteString -> Either GenError B.ByteString
-sendMessage seeds msg = foldl (\acc stream -> liftM (strXor stream) acc) msg streams
-    where streams = rights $ map keyData seeds
+sendMessage :: [Seed] -> B.ByteString -> Either String B.ByteString
+sendMessage seeds msg = foldl (\acc stream -> strXor stream acc) msg <$> keyData seeds
 
-keyData :: Integer -> Either GenError B.ByteString
-keyData = randomBytes roundBytes . intBytes
+keyData :: [Seed] -> Either String [B.ByteString]
+keyData = mapM $ randomBytes roundBytes . intBytes

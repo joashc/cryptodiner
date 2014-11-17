@@ -17,11 +17,14 @@ intBytes i = BL.toStrict $ encode (i :: Integer)
 strXor :: B.ByteString -> B.ByteString -> B.ByteString
 strXor x = B.pack . B.zipWith xor x
 
-randomBytes :: Int -> B.ByteString -> Either GenError B.ByteString
+randomBytes :: Int -> B.ByteString -> Either String B.ByteString
 randomBytes len seed = do
-            gen <- newGen seed :: Either GenError HashDRBG
-            let Right (bytes, _) = genBytes len gen
-            return bytes
+            let gen = newGen seed :: Either GenError HashDRBG
+            case gen of
+                Left err -> Left . show $ err
+                Right g -> do
+                    let Right (bytes, _) = genBytes len g
+                    return bytes
 
 -- Generate a random byte using system-provided entropy
 -- TODO: increase the output space size

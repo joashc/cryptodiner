@@ -1,5 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
-module Messaging (Participant'(..), IpAddress, ServerStatus(..), Message(..), MessageType(..), decodeMessage, send) where
+module Messaging (Participant(..), IpAddress, ServerStatus(..), Message(..), MessageType(..), decodeMessage, send) where
 import Data.Serialize
 import System.IO
 import DiffieHellman
@@ -17,7 +17,7 @@ instance Serialize PublicKey
 instance Serialize GroupParameters
 instance Serialize Message
 instance Serialize MessageType
-instance Serialize Participant'
+instance Serialize Participant
 
 send :: HostName -> PortNumber -> Message -> IO()
 send ip port m = withSocketsDo $ do
@@ -30,10 +30,10 @@ decodeMessage s = decode . BL.toStrict . C.pack $ s :: Either String Message
 
 type IpAddress = String
 
-data Participant' = Participant' {
-    pubKey' :: PublicKey,
+data Participant = Participant {
+    publicKey :: PublicKey,
     ipAddress :: IpAddress,
-    port' :: Int
+    port :: Int
 } deriving (Show, Generic)
 
 data Message = Message {

@@ -11,19 +11,13 @@ import DiffieHellman
 import qualified Data.ByteString as B (ByteString)
 
 data ServerState = ServerState {
-    peers :: [Participant'],
+    peers :: [Participant],
     status :: ServerStatus,
     groupSize :: Int,
     roundStreams :: [B.ByteString],
     listenPort :: Int,
     privKey :: PrivateKey
 }
-
-serverPrivateKey = PrivateKey 54238578399943587349 gp
-
-createParticipant :: Integer -> IpAddress -> PortNumber -> Participant'
-createParticipant e ip port = Participant' pubKey ip $ fromIntegral port
-    where pubKey = PublicKey e gp
 
 main :: IO ()
 main = getArgs >>= parseArgs
@@ -37,70 +31,71 @@ peerMode = withSocketsDo $ do
     state <- newEmptyMVar
     p <- systemRandomBytes 768
     putStrLn $ "Using private key: " ++ show p
-    let privKey = PrivateKey p gp
-    let pubKey = calculatePublicKey privKey
+    let peerPrivateKey = PrivateKey p gp
+    let peerPublicKey = calculatePublicKey peerPrivateKey
     putStrLn "Enter port:"
-    portNum <- getLine
-    let port = read portNum :: Int
-    putMVar state $ ServerState [] Peering 0 [] port privKey
-    let message = Message KeyExchange (encode pubKey) port
+    portNumber <- getLine
+    let peerPort = read portNumber :: Int
+    putMVar state $ ServerState [] Peering 0 [] peerPort peerPrivateKey
+    let message = Message KeyExchange (encode peerPublicKey) peerPort
     send "127.0.0.1" 6968 message
-    putStrLn $ "Listening on port " ++ show port
-    socket <- listenOn $ PortNumber (toEnum port)
+    putStrLn $ "Listening on port " ++ show peerPort
+    socket <- listenOn $ PortNumber (toEnum peerPort)
     peerSocketHandler state socket
 
 peerSocketHandler :: MVar ServerState -> Socket -> IO ()
 peerSocketHandler state s = withSocketsDo $ do
-    (h, addr, port) <- accept s
+    (h, addr, p) <- accept s
     putStrLn $ show addr ++ " connected."
-    m <- hGetContents h
-    let msg = decodeMessage m
+    c <- hGetContents h
+    let msg = decodeMessage c
     case msg of
-        Right m -> messageHandler m state addr port h
+        Right m -> messageHandler m state addr p h
         Left e -> print $ "Error parsing message: " ++ e
     peerSocketHandler state s
 
 serverMode :: IO ()
 serverMode = withSocketsDo $ do
     putStrLn "Participants: "
-    groupSize <- getLine
+    grpSize <- getLine
     state <- newEmptyMVar
     p <- systemRandomBytes 768
     putStrLn $ "Using private key: " ++ show p
-    let privKey = PrivateKey p gp
-    putMVar state $ ServerState [] Peering (read groupSize :: Int) [] 6968 privKey
-    let port = 6968
-    putStrLn $ "Listening on port " ++ show port
-    socket <- listenOn $ PortNumber port
+    let privateKey = PrivateKey p gp
+    putMVar state $ ServerState [] Peering (read grpSize :: Int) [] 6968 privateKey
+    let portNumber = 6968
+    putStrLn $ "Listening on port " ++ show portNumber
+    socket <- listenOn $ PortNumber portNumber
     socketHandler state socket
 
 socketHandler :: MVar ServerState -> Socket -> IO ()
 socketHandler state s = do
-    (handle, addr, port) <- accept s
+    (handle, addr, portNumber) <- accept s
     putStrLn $ show addr ++ " connected."
-    forkIO $ connectionHandler state addr port handle
+    _ <- forkIO $ connectionHandler state addr portNumber handle
     socketHandler state s
 
 connectionHandler :: MVar ServerState -> IpAddress -> PortNumber -> Handle -> IO ()
-connectionHandler state ip port h = do
-    e <- hGetContents h
-    let msg = decodeMessage e
+connectionHandler state ip portNumber h = do
+    c <- hGetContents h
+    let msg = decodeMessage c
     case msg of
-        Right m -> messageHandler m state ip port h
+        Right m -> messageHandler m state ip portNumber h
         Left e -> print $ "Could not parse message: " ++ e
 
 messageHandler :: Message -> MVar ServerState -> IpAddress -> PortNumber -> Handle -> IO ()
-messageHandler m state ip port h = do
+messageHandler m state ip _ h = do
     print $ "Recieved " ++ show (messageType m) ++ " message"
     case messageType m of
         KeyExchange -> keyExchangeHandler (decode $ messageBody m :: Either String PublicKey) state ip (portNum m) h
-        PeerList -> peerListHandler (decode $ messageBody m :: Either String [Participant']) state
+        PeerList -> peerListHandler (decode $ messageBody m :: Either String [Participant]) state
         RequestStream -> requestTransmissionHandler state ip (toEnum $ portNum m :: PortNumber)
         Stream -> streamHandler (decode $ messageBody m :: Either String B.ByteString) state
+        _ -> putStrLn "Unknown message type"
         --Reservation -> reservationHandler (decode $ messageBody m :: Either String Integer) state
         --RequestReservation -> reservationHandler (decode $ messageBody m :: Either String Integer) state
 
-appendParticipants :: [Participant'] -> MVar ServerState -> IO ()
+appendParticipants :: [Participant] -> MVar ServerState -> IO ()
 appendParticipants ps state = do
         s <- takeMVar state
         let newPs = ps ++ peers s
@@ -110,33 +105,33 @@ appendParticipants ps state = do
             else putStrLn "Waiting for more peers"
 
 keyExchangeHandler :: Either String PublicKey -> MVar ServerState -> IpAddress -> Int -> Handle -> IO ()
-keyExchangeHandler key state ip port handle =
+keyExchangeHandler key state ip portNumber handle =
     case key of
         Right p -> do
-                     let peer = [Participant' p ip port]
+                     let peer = [Participant p ip portNumber]
                      appendParticipants peer state
         Left e -> hPutStrLn handle $ "Could not parse public key: " ++ e
 
-peerListHandler :: Either String [Participant'] -> MVar ServerState -> IO ()
+peerListHandler :: Either String [Participant] -> MVar ServerState -> IO ()
 peerListHandler (Right ps) state = do
         s <- takeMVar state
-        forkIO $ appendParticipants [p | p <- ps, port' p /= listenPort s] state
+        _ <- forkIO $ appendParticipants [p | p <- ps, port p /= listenPort s] state
         putMVar state s
-peerListHandler (Left e) state = putStrLn $ "Could not add participants: " ++ e
+peerListHandler (Left e) _ = putStrLn $ "Could not add participants: " ++ e
 
 requestTransmissionHandler :: MVar ServerState -> IpAddress -> PortNumber -> IO ()
-requestTransmissionHandler s ip port = withSocketsDo $ do
+requestTransmissionHandler s ip portNumber = withSocketsDo $ do
     putStrLn "Enter message:"
     message <- getLine
     state <- takeMVar s
-    let stream = generateSingleStream message (privKey state) (map pubKey' . peers $ state)
+    let stream = generateSingleStream message (privKey state) (map publicKey . peers $ state)
     case stream of
-        Left e -> putStrLn "Error generating stream"
-        Right s -> send ip port $ Message Stream (encode s) (listenPort state)
+        Left e -> putStrLn $ "Error generating stream: " ++ show e
+        Right msg -> send ip portNumber $ Message Stream (encode msg) (listenPort state)
     putMVar s state
 
 streamHandler :: Either String B.ByteString -> MVar ServerState -> IO ()
-streamHandler (Left e) _ = putStrLn "Error parsing stream"
+streamHandler (Left e) _ = putStrLn $ "Error parsing stream: " ++ e
 streamHandler (Right stream) state = streamReciever stream state
 
 streamReciever :: B.ByteString -> MVar ServerState -> IO ()
@@ -160,8 +155,8 @@ sendPeerList :: MVar ServerState -> IO ()
 sendPeerList s = withSocketsDo $ do
     state <- takeMVar s
     let ps = peers state
-    mapM_ (\p -> forkIO $ send (ipAddress p) (toEnum $ port' p :: PortNumber) $ Message PeerList (encode $ peers state) $ listenPort state) ps
+    mapM_ (\p -> forkIO $ send (ipAddress p) (toEnum $ port p :: PortNumber) $ Message PeerList (encode $ peers state) $ listenPort state) ps
     print $ listenPort state
-    mapM_ (\p -> forkIO $ send (ipAddress p) (toEnum $ port' p :: PortNumber) $ Message RequestReservation (encode $ peers state) $ listenPort state) ps
-    mapM_ (\p -> forkIO $ send (ipAddress p) (toEnum $ port' p :: PortNumber) $ Message RequestStream (encode $ peers state) $ listenPort state) ps
+    mapM_ (\p -> forkIO $ send (ipAddress p) (toEnum $ port p :: PortNumber) $ Message RequestReservation (encode $ peers state) $ listenPort state) ps
+    mapM_ (\p -> forkIO $ send (ipAddress p) (toEnum $ port p :: PortNumber) $ Message RequestStream (encode $ peers state) $ listenPort state) ps
     putMVar s state{status=Transmitting}
