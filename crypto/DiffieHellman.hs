@@ -1,14 +1,10 @@
 {-# LANGUAGE DeriveGeneric #-}
-module DiffieHellman (PrivateKey(..), PublicKey(..), GroupParameters(..), Seed, calculatePublicKey, calculateSharedSeed, sendMessage, keyData, calculateSharedSeeds) where
+module DiffieHellman (PrivateKey(..), PublicKey(..), GroupParameters(..), Seed, calculatePublicKey, calculateSharedSeed, sendMessage, keyData, calculateSharedSeeds, sendStream) where
 import RandomBytes
 import GHC.Generics (Generic)
 import Data.Bits
 import Data.ByteString as B (ByteString)
 import Control.Applicative
-
--- Bytes per round
-roundBytes :: Int
-roundBytes = 256
 
 data PrivateKey = PrivateKey {
     secretExponent :: Integer,
@@ -50,8 +46,11 @@ calculateSharedSeed priv pub
 calculateSharedSeeds :: PrivateKey -> [PublicKey] -> Either String [Seed]
 calculateSharedSeeds privKey pubKeys = sequence $ calculateSharedSeed privKey <$> pubKeys
 
-sendMessage :: [Seed] -> B.ByteString -> Either String B.ByteString
-sendMessage seeds msg = foldl (\acc stream -> strXor stream acc) msg <$> keyData seeds
+sendMessage :: Int -> B.ByteString -> [Seed] -> Either String B.ByteString
+sendMessage byteLen msg seeds = foldl strXor msg <$> keyData byteLen seeds
 
-keyData :: [Seed] -> Either String [B.ByteString]
-keyData = mapM $ randomBytes roundBytes . intBytes
+sendStream :: Int -> [Seed] -> Either String B.ByteString
+sendStream byteLen seeds = foldl1 strXor <$> keyData byteLen seeds
+
+keyData :: Int -> [Seed] -> Either String [B.ByteString]
+keyData len = mapM $ randomBytes len . intBytes

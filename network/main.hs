@@ -19,6 +19,9 @@ data ServerState = ServerState {
     privKey :: PrivateKey
 }
 
+roundBytes :: Int
+roundBytes = 255
+
 main :: IO ()
 main = getArgs >>= parseArgs
 
@@ -124,7 +127,7 @@ requestTransmissionHandler s ip portNumber = withSocketsDo $ do
     putStrLn "Enter message:"
     message <- getLine
     state <- takeMVar s
-    let stream = generateSingleStream message (privKey state) (map publicKey . peers $ state)
+    let stream = generateMessageStream roundBytes message (privKey state) (map publicKey . peers $ state)
     case stream of
         Left e -> putStrLn $ "Error generating stream: " ++ show e
         Right msg -> send ip portNumber $ Message Stream (encode msg) (listenPort state)
