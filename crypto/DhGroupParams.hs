@@ -1,4 +1,4 @@
-module DcNetworkExample where 
+module DhGroupParams where
 import DiffieHellman
 import Numeric
 

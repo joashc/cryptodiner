@@ -1,10 +1,10 @@
 {-# LANGUAGE DeriveGeneric #-}
-module DiffieHellman (PrivateKey(..), PublicKey(..), GroupParameters(..), Seed, calculatePublicKey, calculateSharedSeed, sendMessage, keyData, calculateSharedSeeds, sendStream) where
-import RandomBytes
+module DiffieHellman (PrivateKey(..), PublicKey(..), GroupParameters(..), Seed, calculatePublicKey, calculateSharedSeed,  calculateSharedSeeds) where
 import GHC.Generics (Generic)
 import Data.Bits
-import Data.ByteString as B (ByteString)
 import Control.Applicative
+
+type Seed = Integer
 
 data PrivateKey = PrivateKey {
     secretExponent :: Integer,
@@ -34,7 +34,6 @@ calculatePublicKey priv =
           g = generator $ privParams priv
           p = prime $ privParams priv
 
-type Seed = Integer
 calculateSharedSeed :: PrivateKey -> PublicKey -> Either String Seed
 calculateSharedSeed priv pub
     | pubParams pub /= privParams priv = Left "Error calculating shared seed"
@@ -43,14 +42,6 @@ calculateSharedSeed priv pub
           e  = secretExponent priv
           p = prime $ privParams priv
 
+-- Shared seeds are used to generate deterministic pseudorandom keys of arbitrary length
 calculateSharedSeeds :: PrivateKey -> [PublicKey] -> Either String [Seed]
 calculateSharedSeeds privKey pubKeys = sequence $ calculateSharedSeed privKey <$> pubKeys
-
-sendMessage :: Int -> B.ByteString -> [Seed] -> Either String B.ByteString
-sendMessage byteLen msg seeds = foldl strXor msg <$> keyData byteLen seeds
-
-sendStream :: Int -> [Seed] -> Either String B.ByteString
-sendStream byteLen seeds = foldl1 strXor <$> keyData byteLen seeds
-
-keyData :: Int -> [Seed] -> Either String [B.ByteString]
-keyData len = mapM $ randomBytes len . intBytes

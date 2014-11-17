@@ -5,7 +5,7 @@ import Data.Serialize
 import System.IO
 import System.Environment
 import Control.Concurrent
-import DcNetworkExample
+import DhGroupParams
 import DcNetwork
 import DiffieHellman
 import qualified Data.ByteString as B (ByteString)
@@ -127,7 +127,7 @@ requestTransmissionHandler s ip portNumber = withSocketsDo $ do
     putStrLn "Enter message:"
     message <- getLine
     state <- takeMVar s
-    let stream = generateMessageStream roundBytes message (privKey state) (map publicKey . peers $ state)
+    let stream = generateStream roundBytes message (privKey state) (map publicKey . peers $ state)
     case stream of
         Left e -> putStrLn $ "Error generating stream: " ++ show e
         Right msg -> send ip portNumber $ Message Stream (encode msg) (listenPort state)
