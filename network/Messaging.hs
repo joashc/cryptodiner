@@ -20,8 +20,8 @@ instance Serialize MessageType
 instance Serialize Participant
 
 send :: HostName -> PortNumber -> Message -> IO()
-send ip port m = withSocketsDo $ do
-    handle <- connectTo ip $ PortNumber port
+send ip portNumber m = withSocketsDo $ do
+    handle <- connectTo ip $ PortNumber portNumber
     hPutStrLn handle $ CS.unpack $ encode m
     hClose handle
 

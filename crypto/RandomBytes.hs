@@ -1,6 +1,7 @@
-module RandomBytes (randomBytes, strXor, strBytes, intBytes, systemRandomByte, systemRandomBytes) where
+module RandomBytes (binaryDump, randomNumber, randomBytes, strXor, strBytes, intBytes, systemRandomByte, systemRandomBytes) where
 import Crypto.Random.DRBG
 import qualified Data.ByteString.Char8 as C
+import System.Random
 import Data.Binary
 import Data.Bits
 import Data.Binary.Put
@@ -35,6 +36,9 @@ systemRandomByte = do
         Left err -> error $ show err
         Right (randByte, _) -> return . fromIntegral . head . B.unpack $ randByte :: IO Int
 
+randomNumber :: Int -> IO Int
+randomNumber max = randomRIO (0, max)
+
 systemRandomBytes byteLength = do
     g <- newGenIO :: IO SystemRandom
     case genBytes byteLength g of
@@ -51,8 +55,8 @@ binaryDump max x
           padding = replicate (max - shift) 0
           bytes = (:) offset $ replicate shift 0
 
-indexedWords :: B.ByteString -> [(Int, Word8)]
-indexedWords = filter ((> 0) . snd) . zip [0..] . reverse . B.unpack
+indexedWord8s :: B.ByteString -> [(Int, Word8)]
+indexedWord8s = filter ((> 0) . snd) . zip [0..] . reverse . B.unpack
 
 toggledBits :: Int -> Word8 -> [Int]
 toggledBits index word = map (+ offset) setBits
@@ -60,7 +64,7 @@ toggledBits index word = map (+ offset) setBits
           offset = index * 8
 
 toggledBitsBS :: B.ByteString -> [Int]
-toggledBitsBS = concatMap (uncurry toggledBits) . indexedWords
+toggledBitsBS = concatMap (uncurry toggledBits) . indexedWord8s
 
 type Reservation = Int
 type Round = Int

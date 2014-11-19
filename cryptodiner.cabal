@@ -21,6 +21,7 @@ executable cryptodiner
                        bytestring,
                        binary,
                        MonadRandom,
+                       random,
                        crypto-random,
                        DRBG,
                        network,

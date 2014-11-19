@@ -1,4 +1,6 @@
 import Network
+import Reservation
+import Control.Applicative
 import Messaging
 import RandomBytes
 import Data.Serialize
@@ -118,8 +120,12 @@ keyExchangeHandler key state ip portNumber handle =
 peerListHandler :: Either String [Participant] -> MVar ServerState -> IO ()
 peerListHandler (Right ps) state = do
         s <- takeMVar state
-        _ <- forkIO $ appendParticipants [p | p <- ps, port p /= listenPort s] state
-        putMVar state s
+        let newPs = filter (\p -> listenPort s /= port p) ps
+        let reservationBitSize = bitsForParticipants 0.01 3
+        reservation <- randomNumber reservationBitSize
+        let resBytes = binaryDump reservationBitSize reservation
+        print $ generateReservationStream ((+ 1) $ div reservationBitSize 8) (privKey s) (map publicKey . peers $ s) <$> resBytes
+        putMVar state s{peers = newPs}
 peerListHandler (Left e) _ = putStrLn $ "Could not add participants: " ++ e
 
 requestTransmissionHandler :: MVar ServerState -> IpAddress -> PortNumber -> IO ()
@@ -159,7 +165,6 @@ sendPeerList s = withSocketsDo $ do
     state <- takeMVar s
     let ps = peers state
     mapM_ (\p -> forkIO $ send (ipAddress p) (toEnum $ port p :: PortNumber) $ Message PeerList (encode $ peers state) $ listenPort state) ps
-    print $ listenPort state
-    mapM_ (\p -> forkIO $ send (ipAddress p) (toEnum $ port p :: PortNumber) $ Message RequestReservation (encode $ peers state) $ listenPort state) ps
-    mapM_ (\p -> forkIO $ send (ipAddress p) (toEnum $ port p :: PortNumber) $ Message RequestStream (encode $ peers state) $ listenPort state) ps
+    --mapM_ (\p -> forkIO $ send (ipAddress p) (toEnum $ port p :: PortNumber) $ Message RequestReservation (encode $ peers state) $ listenPort state) ps
+    --mapM_ (\p -> forkIO $ send (ipAddress p) (toEnum $ port p :: PortNumber) $ Message RequestStream (encode $ peers state) $ listenPort state) ps
     putMVar s state{status=Transmitting}
