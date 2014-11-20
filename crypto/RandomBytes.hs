@@ -1,4 +1,4 @@
-module RandomBytes (binaryDump, randomNumber, randomBytes, strXor, strBytes, intBytes, systemRandomByte, systemRandomBytes) where
+module RandomBytes (toggledBitsBS, binaryDump, randomNumber, randomBytes, strXor, strBytes, intBytes, systemRandomByte, systemRandomBytes) where
 import Crypto.Random.DRBG
 import qualified Data.ByteString.Char8 as C
 import System.Random

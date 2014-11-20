@@ -1,6 +1,7 @@
 import Network
 import Reservation
 import Control.Applicative
+import qualified Control.Monad as M (join)
 import Messaging
 import RandomBytes
 import Data.Serialize
@@ -93,9 +94,9 @@ messageHandler m state ip _ h = do
     print $ "Recieved " ++ show (messageType m) ++ " message"
     case messageType m of
         KeyExchange -> keyExchangeHandler (decode $ messageBody m :: Either String PublicKey) state ip (portNum m) h
-        PeerList -> peerListHandler (decode $ messageBody m :: Either String [Participant]) state
+        PeerList -> peerListHandler (decode $ messageBody m :: Either String [Participant]) state ip (toEnum $ portNum m :: PortNumber)
         RequestStream -> requestTransmissionHandler state ip (toEnum $ portNum m :: PortNumber)
-        Stream -> streamHandler (decode $ messageBody m :: Either String B.ByteString) state
+        Stream -> streamReciever (messageBody m) state
         _ -> putStrLn "Unknown message type"
         --Reservation -> reservationHandler (decode $ messageBody m :: Either String Integer) state
         --RequestReservation -> reservationHandler (decode $ messageBody m :: Either String Integer) state
@@ -117,16 +118,21 @@ keyExchangeHandler key state ip portNumber handle =
                      appendParticipants peer state
         Left e -> hPutStrLn handle $ "Could not parse public key: " ++ e
 
-peerListHandler :: Either String [Participant] -> MVar ServerState -> IO ()
-peerListHandler (Right ps) state = do
+peerListHandler :: Either String [Participant] -> MVar ServerState -> IpAddress -> PortNumber -> IO ()
+peerListHandler (Right ps) state ip portNumber = do
         s <- takeMVar state
         let newPs = filter (\p -> listenPort s /= port p) ps
         let reservationBitSize = bitsForParticipants 0.01 3
         reservation <- randomNumber reservationBitSize
+        print reservation
         let resBytes = binaryDump reservationBitSize reservation
-        print $ generateReservationStream ((+ 1) $ div reservationBitSize 8) (privKey s) (map publicKey . peers $ s) <$> resBytes
+        let len = (+ 1) $ div reservationBitSize 8
+        let stream = M.join $ generateReservationStream len (privKey s) (map publicKey newPs) <$> resBytes
+        case stream of
+            Left e -> putStrLn $ "Error generating stream: " ++ show e
+            Right msg -> send ip portNumber $ Message Stream msg (listenPort s)
         putMVar state s{peers = newPs}
-peerListHandler (Left e) _ = putStrLn $ "Could not add participants: " ++ e
+peerListHandler (Left e) _ _ _ = putStrLn $ "Could not add participants: " ++ e
 
 requestTransmissionHandler :: MVar ServerState -> IpAddress -> PortNumber -> IO ()
 requestTransmissionHandler s ip portNumber = withSocketsDo $ do
@@ -147,17 +153,18 @@ streamReciever :: B.ByteString -> MVar ServerState -> IO ()
 streamReciever stream s = do
     state <- takeMVar s
     let streams = stream:roundStreams state
-    putMVar s state{ roundStreams = streams }
+    print stream
     if length streams == groupSize state
-        then broadcastRoundResult s
-        else putStrLn "Waiting for the rest of the peers"
+        then forkIO $ broadcastRoundResult s
+        else forkIO $ putStrLn "Waiting for the rest of the peers"
+    putMVar s state{ roundStreams = streams }
 
 broadcastRoundResult :: MVar ServerState -> IO ()
 broadcastRoundResult s = withSocketsDo $ do
     state <- takeMVar s
     let streams = roundStreams state
-    print streams
-    print $ xorStreams streams
+    let xored =  xorStreams streams
+    print . toggledBitsBS $ xored
     putMVar s state{ roundStreams=[], status = Transmitting }
 
 sendPeerList :: MVar ServerState -> IO ()
