@@ -45,14 +45,14 @@ systemRandomBytes byteLength = do
         Left err -> error $ show err
         Right (randByte, _) -> return . fst . head . readHex . concatMap (`showHex` "") . B.unpack $ randByte
 
-binaryDump :: Int -> Int -> Maybe B.ByteString
+binaryDump :: Int -> Int -> Either String B.ByteString
 binaryDump max x
-    | max < x = Nothing
-    | otherwise = Just . BL.toStrict . runPut . mapM_ (putWord8 . fromIntegral) $ padding ++ bytes
+    | max < x = Left "Cannot encode a number greater than the maximum"
+    | otherwise = Right . BL.toStrict . runPut . mapM_ (putWord8 . fromIntegral) $ padding ++ bytes
     where modulus = mod x 8
           offset = 2 ^ modulus
           shift = div x 8
-          padding = replicate (max - shift) 0
+          padding = replicate ((div max 8) - shift) 0
           bytes = (:) offset $ replicate shift 0
 
 indexedWord8s :: B.ByteString -> [(Int, Word8)]
