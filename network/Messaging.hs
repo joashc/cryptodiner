@@ -31,7 +31,7 @@ decodeMessage s = decode . BL.toStrict . C.pack $ s :: Either String Message
 type IpAddress = String
 
 data Participant = Participant {
-    publicKey :: PublicKey,
+    peerPubKey :: PublicKey,
     ipAddress :: IpAddress,
     port :: Int
 } deriving (Show, Generic)

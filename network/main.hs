@@ -127,7 +127,7 @@ peerListHandler (Right ps) state ip portNumber = do
         print reservation
         let resBytes = binaryDump reservationBitSize reservation
         let len = (+ 1) $ div reservationBitSize 8
-        let stream = M.join $ generateReservationStream len (privKey s) (map publicKey newPs) <$> resBytes
+        let stream = M.join $ generateReservationStream len (privKey s) (map peerPubKey newPs) <$> resBytes
         case stream of
             Left e -> putStrLn $ "Error generating stream: " ++ show e
             Right msg -> send ip portNumber $ Message Stream msg (listenPort s)
@@ -139,7 +139,7 @@ requestTransmissionHandler s ip portNumber = withSocketsDo $ do
     putStrLn "Enter message:"
     message <- getLine
     state <- takeMVar s
-    let stream = generateStream roundBytes message (privKey state) (map publicKey . peers $ state)
+    let stream = generateStream roundBytes message (privKey state) (map peerPubKey . peers $ state)
     case stream of
         Left e -> putStrLn $ "Error generating stream: " ++ show e
         Right msg -> send ip portNumber $ Message Stream (encode msg) (listenPort state)
