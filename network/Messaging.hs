@@ -1,23 +1,25 @@
 {-# LANGUAGE DeriveGeneric #-}
-module Messaging (Participant(..), IpAddress, ServerStatus(..), Message(..), MessageType(..), decodeMessage, send) where
+module Messaging (Participant(..), IpAddress, ServerStatus(..), Message(..), MessageType(..), decodeMessage, send, PeerData(..), RoundResultData(..)) where
 import Data.Serialize
 import System.IO
 import DiffieHellman
-import Data.ByteString.Internal as I
+import qualified Data.ByteString as B
 import Data.ByteString.Lazy as BL (toStrict)
-import qualified Data.ByteString.Lazy.Char8 as C (pack, unpack, hPutStrLn)
-import qualified Data.ByteString.Char8 as CS (unpack)
+import Data.ByteString.Lazy.Char8 as C (pack)
+import Data.ByteString.Char8 as CS (unpack)
 import GHC.Generics
 import Network
 
-data ServerStatus = Peering | RoundNegotiation | Transmitting | Closed
-data MessageType = Ping | KeyExchange | PeerList | RequestStream | Stream | CombinedStream | RequestReservation | Reservation deriving (Show, Generic, Eq)
+data ServerStatus = Peering | Round
+data MessageType = Ping | Peer | PeerList | ReservationStream | MessageStream | RoundResult deriving (Show, Generic, Eq)
 
 instance Serialize PublicKey
 instance Serialize GroupParameters
 instance Serialize Message
 instance Serialize MessageType
 instance Serialize Participant
+instance Serialize PeerData
+instance Serialize RoundResultData
 
 send :: HostName -> PortNumber -> Message -> IO()
 send ip portNumber m = withSocketsDo $ do
@@ -32,13 +34,23 @@ type IpAddress = String
 
 data Participant = Participant {
     peerPubKey :: PublicKey,
+    peerNonce :: B.ByteString,
     ipAddress :: IpAddress,
     port :: Int
 } deriving (Show, Generic)
 
 data Message = Message {
     messageType :: MessageType,
-    messageBody :: I.ByteString,
+    messageBody :: B.ByteString,
     portNum :: Int
 } deriving (Generic, Show)
 
+data PeerData = PeerData {
+    publicKey :: PublicKey,
+    nonce :: B.ByteString
+} deriving (Generic, Show)
+
+data RoundResultData = RoundResultData {
+    number :: Int,
+    roundData :: [B.ByteString]
+} deriving (Generic, Show)

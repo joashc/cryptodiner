@@ -39,6 +39,7 @@ systemRandomByte = do
 randomNumber :: Int -> IO Int
 randomNumber max = randomRIO (0, max)
 
+systemRandomBytes :: (Num b, Eq b) => ByteLength -> IO b
 systemRandomBytes byteLength = do
     g <- newGenIO :: IO SystemRandom
     case genBytes byteLength g of

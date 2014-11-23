@@ -1,4 +1,4 @@
-module DcNetwork (generateReservationStream, generateStream, xorStreams, calculateStream, calculateMessageStream) where
+module DcNetwork (generateStream, xorStreams, calculateStream, calculateMessageStream) where
 import DiffieHellman
 import Data.ByteString as B (ByteString)
 import RandomBytes
@@ -28,14 +28,10 @@ padString maxLen s
 generateStream :: Int -> String -> PrivateKey -> [PublicKey] -> Either String B.ByteString
 generateStream byteLen message privKey keys =
     if length message == 0
-        then seeds >>= calculateStream byteLen
-        else seeds >>= calculateMessageStream byteLen msg
+        then calculateStream byteLen =<< seeds
+        else calculateMessageStream byteLen msg =<< seeds
     where seeds = calculateSharedSeeds privKey keys
           msg = strBytes . padString byteLen $ message
-
-generateReservationStream :: Int -> PrivateKey -> [PublicKey] -> B.ByteString -> Either String B.ByteString
-generateReservationStream byteLen privKey keys res = seeds >>= calculateMessageStream byteLen res
-    where seeds = calculateSharedSeeds privKey keys
 
 xorStreams :: [B.ByteString] -> B.ByteString
 xorStreams streams = foldl1 strXor streams
