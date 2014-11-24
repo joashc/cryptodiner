@@ -1,5 +1,6 @@
 module DcNetwork (generateStream, xorStreams, calculateStream, calculateMessageStream) where
 import DiffieHellman
+import DhGroupParams
 import Data.ByteString as B (ByteString)
 import RandomBytes
 import Data.List (foldl', foldl1')
@@ -31,8 +32,11 @@ generateStream byteLen message privKey keys =
     if length message == 0
         then calculateStream byteLen =<< seeds
         else calculateMessageStream byteLen msg =<< seeds
-    where seeds = calculateSharedSeeds privKey keys
+    where seeds = calculateSharedSeeds privKey $ excludeSelf privKey keys
           msg = strBytes . padString byteLen $ message
+
+excludeSelf :: PrivateKey -> [PublicKey] -> [PublicKey]
+excludeSelf priv pubs = filter (\pub -> pub /= calculatePublicKey priv) pubs
 
 xorStreams :: [B.ByteString] -> B.ByteString
 xorStreams streams = foldl1' strXor streams

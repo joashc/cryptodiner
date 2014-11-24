@@ -68,7 +68,10 @@ messageHandler m state ip _ h = do
     print $ "Recieved " ++ show (messageType m) ++ " message"
     case messageType m of
         Peer -> keyExchangeHandler (decode $ messageBody m :: Either String PeerData) state ip (portNum m) h
-        ReservationStream -> streamReciever (messageBody m) state
+        ReservationStream -> do
+            streamReciever (messageBody m) state
+        MessageStream -> do
+            streamReciever (messageBody m) state
         _ -> putStrLn "Unknown message type"
 
 keyExchangeHandler :: Either String PeerData -> MVar ServerState -> IpAddress -> Int -> Handle -> IO ()
@@ -103,11 +106,14 @@ streamReciever :: B.ByteString -> MVar ServerState -> IO ()
 streamReciever stream s = do
     state <- takeMVar s
     let streams = stream:roundStreams state
-    print stream
     if length streams == groupSize state
-        then broadcastRoundResult (listenPort state) (roundNo state) (peers state) streams
-        else putStrLn "Waiting for the rest of the peers"
-    putMVar s state{ roundStreams = streams }
+        then do
+            let round = roundNo state
+            broadcastRoundResult (listenPort state) round (peers state) streams
+            putMVar s state{ roundStreams = [], roundNo = round + 1 }
+        else do
+            putStrLn "Waiting for the rest of the peers"
+            putMVar s state{ roundStreams = streams }
 
 broadcastRoundResult :: Int -> Int -> [Participant] -> [B.ByteString] -> IO ()
 broadcastRoundResult portNo roundNum ps streams = withSocketsDo $ do

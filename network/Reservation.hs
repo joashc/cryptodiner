@@ -1,4 +1,4 @@
-module Reservation where
+module Reservation (bitsForParticipants, isReservationRound, roundToTransmit, reservationStream) where
 import DiffieHellman
 import RandomBytes
 import Messaging

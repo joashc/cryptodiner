@@ -65,19 +65,28 @@ peerListHandler key s ip portNumber = do
     state <- takeMVar s
     case key of
         Right ps -> do
-            let resBitSize = bitsForParticipants 0.01 $ length ps
-            res <- randomNumber resBitSize
-            let resStream = reservationStream resBitSize (privKey state) ps res
-            case resStream of
-                Right stream -> do
-                    send ip 6968 $ Message ReservationStream stream (listenPort state)
-                    putMVar s state{ group = ps, reservation = Just res }
-                Left err -> do
-                    putStrLn $ "Could not send reservation: " ++ err
-                    putMVar s state { group = ps }
+            forkIO $ sendReservation ip portNumber s
+            putMVar s state { group = ps }
         Left err -> do
-            putStrLn $ "Could not add peers: " ++ err
+            forkIO . putStrLn $ "Could not add peers: " ++ err
             putMVar s state
+
+sendReservation :: IpAddress -> PortNumber -> MVar PeerState -> IO ()
+sendReservation ip theirPort s = do
+    state <- takeMVar s
+    let ps = group state
+    let ourPort = listenPort state
+    let priv = privKey state
+    let resBitSize = bitsForParticipants 0.01 $ length ps
+    res <- randomNumber resBitSize
+    let resStream = reservationStream resBitSize priv ps res
+    case resStream of
+        Right stream -> do
+            send "127.0.0.1" 6968 $ Message ReservationStream stream ourPort
+            putMVar s state{ reservation = Just res }
+        Left err -> do
+            putStrLn $ "Could not send reservation: " ++ err
+            putMVar s state { reservation = Nothing }
 
 roundResultHandler :: IpAddress -> Int -> Either String RoundResultData -> MVar PeerState -> IO ()
 roundResultHandler ip port msg s  = do
@@ -86,38 +95,42 @@ roundResultHandler ip port msg s  = do
         Left err -> forkIO $ putStrLn $ "Round result error: " ++ err
         Right result -> forkIO $ parseResult result $ group state
     putMVar s state
-    sendNextMessage ip port s
     where parseResult r g = if isReservationRound (length g) (number r) == True
-            then reservationResultHandler s (toggledBitsBS . xorStreams $ roundData r)
-            else messageResultHandler s $ roundData r
+            then reservationResultHandler ip port s (toggledBitsBS . xorStreams $ roundData r)
+            else messageResultHandler ip port s $ roundData r
 
-reservationResultHandler :: MVar PeerState -> [Int] -> IO ()
-reservationResultHandler s rs = do
+reservationResultHandler :: IpAddress -> Int -> MVar PeerState -> [Int] -> IO ()
+reservationResultHandler ip port s rs = do
     state <- takeMVar s
     let current = roundCounter state
     let res = reservation state
     let round = roundToTransmit current rs =<< res
-    print round
     putMVar s state{ transmitRound = round, roundCounter = current + 1 }
+    sendNextMessage ip port s
 
-messageResultHandler :: MVar PeerState -> [B.ByteString] -> IO ()
-messageResultHandler s streams = do
+messageResultHandler :: IpAddress -> Int -> MVar PeerState -> [B.ByteString] -> IO ()
+messageResultHandler ip port s streams = do
     state <- takeMVar s
     print . xorStreams $ streams
     let current = roundCounter state
     putMVar s state { roundCounter = current + 1 }
+    if isReservationRound (length . group $ state) (current + 1) == True
+    then sendReservation ip (toEnum port :: PortNumber) s
+    else sendNextMessage ip port s
 
 sendNextMessage :: IpAddress -> Int -> MVar PeerState -> IO ()
 sendNextMessage ip port s = do
     state <- takeMVar s
     if Just (roundCounter state) == transmitRound state
     then do
+        putStrLn "Enter message:"
         message <- getLine
         let stream = generateStream 255 message (privKey state) (map peerPubKey . group $ state)
         sendStream (listenPort state) stream ip port
     else do
         let stream = generateStream 255 [] (privKey state) (map peerPubKey . group $ state)
         sendStream (listenPort state) stream ip port
+    putMVar s state
 
 sendStream :: Int -> Either String B.ByteString -> IpAddress -> Int -> IO ()
 sendStream ownPort stream theirIp theirPort = 
