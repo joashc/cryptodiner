@@ -2,6 +2,7 @@ module DcNetwork (generateStream, xorStreams, calculateStream, calculateMessageS
 import DiffieHellman
 import Data.ByteString as B (ByteString)
 import RandomBytes
+import Data.List (foldl', foldl1')
 import Control.Applicative
 
 -- Extend shared seed length by generating deterministic psudorandom keys
@@ -10,11 +11,11 @@ generateKeys len = mapM $ randomBytes len . intBytes
 
 -- xor a message with shared keys
 calculateMessageStream :: Int -> B.ByteString -> [Seed] -> Either String B.ByteString
-calculateMessageStream byteLen msg seeds = foldl strXor msg <$> generateKeys byteLen seeds
+calculateMessageStream byteLen msg seeds = foldl' strXor msg <$> generateKeys byteLen seeds
 
 -- or just xor the shared keys
 calculateStream :: Int -> [Seed] -> Either String B.ByteString
-calculateStream byteLen seeds = foldl1 strXor <$> generateKeys byteLen seeds
+calculateStream byteLen seeds = foldl1' strXor <$> generateKeys byteLen seeds
 
 -- Pad the message to avoid leaking message length
 padString :: Int -> String -> String
@@ -34,4 +35,4 @@ generateStream byteLen message privKey keys =
           msg = strBytes . padString byteLen $ message
 
 xorStreams :: [B.ByteString] -> B.ByteString
-xorStreams streams = foldl1 strXor streams
+xorStreams streams = foldl1' strXor streams

@@ -3,6 +3,7 @@ import DiffieHellman
 import RandomBytes
 import Messaging
 import DcNetwork
+import Data.List (sort, elemIndex)
 import qualified Data.ByteString as B
 import qualified Control.Monad as M
 import Control.Applicative
@@ -29,3 +30,7 @@ reservationStream resBitSize priv participants res = M.join $ genReservation str
 isReservationRound :: Int -> Int -> Bool
 isReservationRound groupSize roundNum = (== 0) $ mod roundNum $ groupSize + 1
 
+roundToTransmit :: Int -> [Int] -> Int -> Maybe Int
+roundToTransmit current rs r = (+) nextRound <$> resIndex
+    where nextRound = current + 1
+          resIndex = elemIndex r $ sort rs
