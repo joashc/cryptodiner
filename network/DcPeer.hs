@@ -11,6 +11,7 @@ import Data.ByteString as B (ByteString, take, drop)
 import Data.Serialize
 import System.IO
 import Control.Applicative
+import qualified Control.Monad as M (join)
 
 data PeerState = PeerState {
     privKey :: PrivateKey,
@@ -20,7 +21,7 @@ data PeerState = PeerState {
     transmitRound :: Maybe Int,
     listenPort :: Int,
     nonces :: [B.ByteString],
-    cachedMessage :: Maybe String
+    cachedMessage :: Either String String
 } deriving (Show)
 
 messageSize :: Int
@@ -37,7 +38,7 @@ peerMode = do
     let peerPort = read portNumber :: Int
     putStrLn $ "Listening on port " ++ show peerPort
     socket <- listenOn $ PortNumber (toEnum peerPort)
-    putMVar state $ PeerState privateKey [] 0 Nothing Nothing peerPort [] Nothing
+    putMVar state $ PeerState privateKey [] 0 Nothing Nothing peerPort [] (Left "No recorded message")
     nonce <- systemRandomBytes 256
     sendPeerData nonce privateKey peerPort
     peerSocketHandler state socket
@@ -45,7 +46,6 @@ peerMode = do
 peerSocketHandler :: MVar PeerState -> Socket -> IO ()
 peerSocketHandler s socket = withSocketsDo $ do
     (h, addr, p) <- accept socket
-    putStrLn $ show addr ++ " connected."
     _ <- forkIO $ peerConnectionHandler s addr p h
     peerSocketHandler s socket
 
@@ -59,7 +59,6 @@ peerConnectionHandler s ip portNumber h = do
 
 peerMessageHandler :: MVar PeerState -> IpAddress -> PortNumber -> Handle -> Message -> IO ()
 peerMessageHandler s ip p h m = do
-    print $ "Recieved " ++ show (messageType m) ++ " message"
     case messageType m of
         PeerList -> peerListHandler (decode $ messageBody m :: Either String [Participant]) s ip p
         RoundResult -> roundResultHandler ip (portNum m) (decode $ messageBody m :: Either String RoundResultData) s
@@ -79,6 +78,13 @@ peerListHandler key s ip portNumber = do
 sendReservation :: IpAddress -> PortNumber -> MVar PeerState -> IO ()
 sendReservation ip theirPort s = do
     state <- takeMVar s
+    putStrLn ""
+    putStrLn "=========================================="
+    putStrLn ""
+    putStrLn $ "Reservation Round: " ++ show (roundCounter state)
+    putStrLn "Enter message:"
+    message <- getLine
+    putStrLn ""
     let ps = group state
     let ourPort = listenPort state
     let priv = privKey state
@@ -87,10 +93,11 @@ sendReservation ip theirPort s = do
     let roundNo = roundCounter state
     let nonceList = nonces state
     let resStream = reservationStream roundNo nonceList resBitSize priv ps res
+    putStrLn "Waiting for round reservations..."
     case resStream of
         Right stream -> do
             send "127.0.0.1" 6968 $ Message ReservationStream stream ourPort
-            putMVar s state{ reservation = Just res }
+            putMVar s state{ reservation = Just res, cachedMessage = Right message }
         Left err -> do
             putStrLn $ "Could not send reservation: " ++ err
             putMVar s state { reservation = Nothing }
@@ -109,6 +116,11 @@ roundResultHandler ip port msg s  = do
 reservationResultHandler :: IpAddress -> Int -> MVar PeerState -> [Int] -> IO ()
 reservationResultHandler ip port s rs = do
     state <- takeMVar s
+    putStrLn "Negotiated."
+    putStrLn ""
+    putStrLn "========="
+    putStrLn ""
+    putStrLn "Messages this round:"
     let current = roundCounter state
     let res = reservation state
     let round = roundToTransmit current rs =<< res
@@ -118,7 +130,6 @@ reservationResultHandler ip port s rs = do
 messageResultHandler :: IpAddress -> Int -> MVar PeerState -> [B.ByteString] -> IO ()
 messageResultHandler ip port s streams = do
     state <- takeMVar s
-    print streams
     print . parseMessageStreams $ streams
     let current = roundCounter state
     putMVar s state { roundCounter = current + 1 }
@@ -139,12 +150,10 @@ sendNextMessage ip port s = do
     let nonceList = nonces state
     if Just (roundCounter state) == transmitRound state
     then do
-        putStrLn "Enter message:"
-        message <- getLine
-        let stream = generateStream roundNo nonceList messageSize message (privKey state) (map peerPubKey . group $ state)
+        let stream = M.join $ generateStream roundNo nonceList messageSize (privKey state) (map peerPubKey . group $ state) <$> cachedMessage state
         sendStream (listenPort state) stream ip port
     else do
-        let stream = generateStream roundNo nonceList messageSize [] (privKey state) (map peerPubKey . group $ state)
+        let stream = M.join $ generateStream roundNo nonceList messageSize (privKey state) (map peerPubKey . group $ state) <$> (Right [])
         sendStream (listenPort state) stream ip port
     putMVar s state
 

@@ -65,7 +65,6 @@ connectionHandler state ip portNumber h = do
 
 messageHandler :: Message -> MVar ServerState -> IpAddress -> PortNumber -> Handle -> IO ()
 messageHandler m state ip _ h = do
-    print $ "Recieved " ++ show (messageType m) ++ " message"
     case messageType m of
         Peer -> keyExchangeHandler (decode $ messageBody m :: Either String PeerData) state ip (portNum m) h
         ReservationStream -> do

@@ -29,8 +29,8 @@ padString maxLen s
     | otherwise = replicate maxLen ' '
     where len = length s + 8
 
-generateStream :: Int -> [B.ByteString] -> Int -> String -> PrivateKey -> [PublicKey] -> Either String B.ByteString
-generateStream roundNo ns byteLen message privKey keys =
+generateStream :: Int -> [B.ByteString] -> Int -> PrivateKey -> [PublicKey] -> String -> Either String B.ByteString
+generateStream roundNo ns byteLen privKey keys message =
     if length message == 0
         then calculateStream byteLen =<< roundSeeds
         else M.join $ calculateMessageStream byteLen <$> msgBody <*> roundSeeds
