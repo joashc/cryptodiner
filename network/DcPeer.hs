@@ -19,7 +19,8 @@ data PeerState = PeerState {
     reservation :: Maybe Int,
     transmitRound :: Maybe Int,
     listenPort :: Int,
-    nonces :: [B.ByteString]
+    nonces :: [B.ByteString],
+    cachedMessage :: Maybe String
 } deriving (Show)
 
 messageSize :: Int
@@ -29,15 +30,16 @@ messageSize = 1024
 peerMode :: IO ()
 peerMode = do
     state <- newEmptyMVar
-    randNum <- systemRandomBytes 768
+    randNum <- systemRandomNum 768
     let privateKey = PrivateKey randNum gp
     putStrLn "Enter port:"
     portNumber <- getLine
     let peerPort = read portNumber :: Int
     putStrLn $ "Listening on port " ++ show peerPort
     socket <- listenOn $ PortNumber (toEnum peerPort)
-    putMVar state $ PeerState privateKey [] 0 Nothing Nothing peerPort []
-    sendPeerData privateKey peerPort
+    putMVar state $ PeerState privateKey [] 0 Nothing Nothing peerPort [] Nothing
+    nonce <- systemRandomBytes 256
+    sendPeerData nonce privateKey peerPort
     peerSocketHandler state socket
 
 peerSocketHandler :: MVar PeerState -> Socket -> IO ()
@@ -82,7 +84,9 @@ sendReservation ip theirPort s = do
     let priv = privKey state
     let resBitSize = bitsForParticipants 0.01 $ length ps
     res <- randomNumber resBitSize
-    let resStream = reservationStream resBitSize priv ps res
+    let roundNo = roundCounter state
+    let nonceList = nonces state
+    let resStream = reservationStream roundNo nonceList resBitSize priv ps res
     case resStream of
         Right stream -> do
             send "127.0.0.1" 6968 $ Message ReservationStream stream ourPort
@@ -114,6 +118,7 @@ reservationResultHandler ip port s rs = do
 messageResultHandler :: IpAddress -> Int -> MVar PeerState -> [B.ByteString] -> IO ()
 messageResultHandler ip port s streams = do
     state <- takeMVar s
+    print streams
     print . parseMessageStreams $ streams
     let current = roundCounter state
     putMVar s state { roundCounter = current + 1 }
@@ -130,14 +135,16 @@ parseMessageStreams streams = flip B.take messageBody <$> messageLen
 sendNextMessage :: IpAddress -> Int -> MVar PeerState -> IO ()
 sendNextMessage ip port s = do
     state <- takeMVar s
+    let roundNo = roundCounter state
+    let nonceList = nonces state
     if Just (roundCounter state) == transmitRound state
     then do
         putStrLn "Enter message:"
         message <- getLine
-        let stream = generateStream messageSize message (privKey state) (map peerPubKey . group $ state)
+        let stream = generateStream roundNo nonceList messageSize message (privKey state) (map peerPubKey . group $ state)
         sendStream (listenPort state) stream ip port
     else do
-        let stream = generateStream messageSize [] (privKey state) (map peerPubKey . group $ state)
+        let stream = generateStream roundNo nonceList messageSize [] (privKey state) (map peerPubKey . group $ state)
         sendStream (listenPort state) stream ip port
     putMVar s state
 
@@ -147,9 +154,9 @@ sendStream ownPort stream theirIp theirPort =
         Left err -> putStrLn $ "Error sending stream: " ++ err
         Right s -> send theirIp (toEnum theirPort :: PortNumber) $ Message MessageStream s ownPort
 
-sendPeerData :: PrivateKey -> Int -> IO ()
-sendPeerData privKey port = withSocketsDo $ do
+sendPeerData :: B.ByteString -> PrivateKey -> Int -> IO ()
+sendPeerData nonce privKey port = withSocketsDo $ do
     putStrLn "Sending public key"
     let publicKey = calculatePublicKey privKey
-    let message = Message Peer (encode $ PeerData publicKey (strBytes "hello")) port
+    let message = Message Peer (encode $ PeerData publicKey nonce) port
     send "127.0.0.1" 6968 message

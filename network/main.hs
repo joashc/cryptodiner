@@ -39,7 +39,7 @@ serverMode = withSocketsDo $ do
     putStrLn "Participants: "
     grpSize <- getLine
     state <- newEmptyMVar
-    p <- systemRandomBytes 768
+    p <- systemRandomNum 768
     putStrLn $ "Using private key: " ++ show p
     let privateKey = PrivateKey p gp
     putMVar state $ ServerState [] Peering (read grpSize :: Int) [] 6968 privateKey 0
@@ -86,17 +86,6 @@ keyExchangeHandler p state ip portNumber handle =
                         else forkIO $ putStrLn "Waiting for peers"
                      putMVar state s{ peers = newPs }
         Left e -> putStrLn $ "Could not parse public key: " ++ e
-
-requestTransmissionHandler :: MVar ServerState -> IpAddress -> PortNumber -> IO ()
-requestTransmissionHandler s ip portNumber = withSocketsDo $ do
-    putStrLn "Enter message:"
-    message <- getLine
-    state <- takeMVar s
-    let stream = generateStream roundBytes message (privKey state) (map peerPubKey . peers $ state)
-    case stream of
-        Left e -> putStrLn $ "Error generating stream: " ++ show e
-        Right msg -> send ip portNumber $ Message MessageStream (encode msg) (listenPort state)
-    putMVar s state
 
 streamHandler :: Either String B.ByteString -> MVar ServerState -> IO ()
 streamHandler (Left e) _ = putStrLn $ "Error parsing stream: " ++ e

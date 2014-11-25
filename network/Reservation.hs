@@ -16,12 +16,13 @@ excludeSelf :: PrivateKey -> [Participant] -> [Participant]
 excludeSelf priv participants = filter (\p -> peerPubKey p /= ownPubKey) participants
     where ownPubKey = calculatePublicKey priv
 
-genReservation :: Int -> PrivateKey -> [PublicKey] -> B.ByteString -> Either String B.ByteString
-genReservation byteLen privKey keys res = calculateMessageStream byteLen res =<< seeds
+genReservation :: Int -> [B.ByteString] -> Int -> PrivateKey -> [PublicKey] -> B.ByteString -> Either String B.ByteString
+genReservation r ns byteLen privKey keys res = calculateMessageStream byteLen res =<< roundSeeds
     where seeds = calculateSharedSeeds privKey keys
+          roundSeeds = generateRoundSeed r ns <$> seeds
 
-reservationStream :: Int -> PrivateKey -> [Participant] -> Int -> Either String B.ByteString
-reservationStream resBitSize priv participants res = M.join $ genReservation streamLen priv pubKeys <$> resBytes
+reservationStream :: Int -> [B.ByteString] -> Int -> PrivateKey -> [Participant] -> Int -> Either String B.ByteString
+reservationStream r ns resBitSize priv participants res = M.join $ genReservation r ns streamLen priv pubKeys <$> resBytes
     where peers = excludeSelf priv participants
           pubKeys = map peerPubKey peers
           resBytes = binaryDump resBitSize res

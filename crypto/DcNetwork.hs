@@ -1,7 +1,7 @@
-module DcNetwork (encodeMessage, generateStream, xorStreams, calculateStream, calculateMessageStream) where
+module DcNetwork (generateRoundSeed, encodeMessage, generateStream, xorStreams, calculateStream, calculateMessageStream) where
 import DiffieHellman
 import DhGroupParams
-import qualified Data.ByteString as B (ByteString, concat, length)
+import qualified Data.ByteString as B (ByteString, concat, length, append)
 import RandomBytes
 import Data.List (foldl', foldl1')
 import Control.Applicative
@@ -9,15 +9,15 @@ import qualified Control.Monad as M (join)
 import Data.Serialize
 
 -- Extend shared seed length by generating deterministic psudorandom keys
-generateKeys :: Int -> [Seed] -> Either String [B.ByteString]
-generateKeys len = mapM $ randomBytes len . intBytes
+generateKeys :: Int -> [B.ByteString] -> Either String [B.ByteString]
+generateKeys len = mapM $ randomBytes len
 
 -- xor a message with shared keys
-calculateMessageStream :: Int -> B.ByteString -> [Seed] -> Either String B.ByteString
+calculateMessageStream :: Int -> B.ByteString -> [B.ByteString] -> Either String B.ByteString
 calculateMessageStream byteLen msg seeds = foldl' strXor msg <$> generateKeys byteLen seeds
 
 -- or just xor the shared keys
-calculateStream :: Int -> [Seed] -> Either String B.ByteString
+calculateStream :: Int -> [B.ByteString] -> Either String B.ByteString
 calculateStream byteLen seeds = foldl1' strXor <$> generateKeys byteLen seeds
 
 -- Pad the message to avoid leaking message length
@@ -29,13 +29,19 @@ padString maxLen s
     | otherwise = replicate maxLen ' '
     where len = length s + 8
 
-generateStream :: Int -> String -> PrivateKey -> [PublicKey] -> Either String B.ByteString
-generateStream byteLen message privKey keys =
+generateStream :: Int -> [B.ByteString] -> Int -> String -> PrivateKey -> [PublicKey] -> Either String B.ByteString
+generateStream roundNo ns byteLen message privKey keys =
     if length message == 0
-        then calculateStream byteLen =<< seeds
-        else M.join $ calculateMessageStream byteLen <$> msgBody <*> seeds
+        then calculateStream byteLen =<< roundSeeds
+        else M.join $ calculateMessageStream byteLen <$> msgBody <*> roundSeeds
     where seeds = calculateSharedSeeds privKey $ excludeSelf privKey keys
+          roundSeeds = generateRoundSeed roundNo ns <$> seeds
           msgBody = encodeMessage byteLen message
+
+generateRoundSeed :: Int -> [B.ByteString] -> [Seed] -> [B.ByteString]
+generateRoundSeed r ns ss = map (B.append roundNonce . intBytes) ss
+    where concatNonce = B.concat ns
+          roundNonce = B.append concatNonce $ encode r
 
 -- Encodes a given string to a bytestring padded with a given length,
 -- with the actual message length encoded in the first 8 bytes of the

@@ -1,4 +1,4 @@
-module RandomBytes (toggledBitsBS, binaryDump, randomNumber, randomBytes, strXor, strBytes, intBytes, systemRandomByte, systemRandomBytes) where
+module RandomBytes (systemRandomNum, toggledBitsBS, binaryDump, randomNumber, randomBytes, strXor, strBytes, intBytes, systemRandomByte, systemRandomBytes) where
 import Crypto.Random.DRBG
 import qualified Data.ByteString.Char8 as C
 import System.Random
@@ -28,7 +28,6 @@ randomBytes len seed = do
                     return bytes
 
 -- Generate a random byte using system-provided entropy
--- TODO: increase the output space size
 systemRandomByte :: IO Int
 systemRandomByte = do
     g <- newGenIO :: IO SystemRandom
@@ -39,12 +38,19 @@ systemRandomByte = do
 randomNumber :: Int -> IO Int
 randomNumber max = randomRIO (0, max)
 
-systemRandomBytes :: (Num b, Eq b) => ByteLength -> IO b
-systemRandomBytes byteLength = do
+systemRandomNum :: (Num b, Eq b) => ByteLength -> IO b
+systemRandomNum byteLength = do
     g <- newGenIO :: IO SystemRandom
     case genBytes byteLength g of
         Left err -> error $ show err
         Right (randByte, _) -> return . fst . head . readHex . concatMap (`showHex` "") . B.unpack $ randByte
+
+systemRandomBytes :: ByteLength -> IO B.ByteString
+systemRandomBytes byteLength = do
+    g <- newGenIO :: IO SystemRandom
+    case genBytes byteLength g of
+        Left err -> error $ show err
+        Right (randByte, _) -> return randByte
 
 binaryDump :: Int -> Int -> Either String B.ByteString
 binaryDump max x
