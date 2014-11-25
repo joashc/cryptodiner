@@ -7,7 +7,7 @@ import RandomBytes
 import DcNetwork
 import DhGroupParams
 import Control.Concurrent
-import Data.ByteString as B (ByteString)
+import Data.ByteString as B (ByteString, take, drop)
 import Data.Serialize
 import System.IO
 import Control.Applicative
@@ -21,6 +21,9 @@ data PeerState = PeerState {
     listenPort :: Int,
     nonces :: [B.ByteString]
 } deriving (Show)
+
+messageSize :: Int
+messageSize = 1024
 
 -- IO functions
 peerMode :: IO ()
@@ -111,12 +114,18 @@ reservationResultHandler ip port s rs = do
 messageResultHandler :: IpAddress -> Int -> MVar PeerState -> [B.ByteString] -> IO ()
 messageResultHandler ip port s streams = do
     state <- takeMVar s
-    print . xorStreams $ streams
+    print . parseMessageStreams $ streams
     let current = roundCounter state
     putMVar s state { roundCounter = current + 1 }
     if isReservationRound (length . group $ state) (current + 1) == True
     then sendReservation ip (toEnum port :: PortNumber) s
     else sendNextMessage ip port s
+
+parseMessageStreams :: [B.ByteString] -> Either String B.ByteString
+parseMessageStreams streams = flip B.take messageBody <$> messageLen
+    where message = xorStreams streams
+          messageBody = B.drop 8 message
+          messageLen = decode . B.take 8 $ message :: Either String Int
 
 sendNextMessage :: IpAddress -> Int -> MVar PeerState -> IO ()
 sendNextMessage ip port s = do
@@ -125,10 +134,10 @@ sendNextMessage ip port s = do
     then do
         putStrLn "Enter message:"
         message <- getLine
-        let stream = generateStream 255 message (privKey state) (map peerPubKey . group $ state)
+        let stream = generateStream messageSize message (privKey state) (map peerPubKey . group $ state)
         sendStream (listenPort state) stream ip port
     else do
-        let stream = generateStream 255 [] (privKey state) (map peerPubKey . group $ state)
+        let stream = generateStream messageSize [] (privKey state) (map peerPubKey . group $ state)
         sendStream (listenPort state) stream ip port
     putMVar s state
 

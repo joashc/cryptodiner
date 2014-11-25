@@ -1,10 +1,12 @@
-module DcNetwork (generateStream, xorStreams, calculateStream, calculateMessageStream) where
+module DcNetwork (encodeMessage, generateStream, xorStreams, calculateStream, calculateMessageStream) where
 import DiffieHellman
 import DhGroupParams
-import Data.ByteString as B (ByteString)
+import qualified Data.ByteString as B (ByteString, concat, length)
 import RandomBytes
 import Data.List (foldl', foldl1')
 import Control.Applicative
+import qualified Control.Monad as M (join)
+import Data.Serialize
 
 -- Extend shared seed length by generating deterministic psudorandom keys
 generateKeys :: Int -> [Seed] -> Either String [B.ByteString]
@@ -25,15 +27,26 @@ padString maxLen s
     | len > maxLen = take maxLen s
     | len < maxLen = s ++ replicate (maxLen - len) ' '
     | otherwise = replicate maxLen ' '
-    where len = length s
+    where len = length s + 8
 
 generateStream :: Int -> String -> PrivateKey -> [PublicKey] -> Either String B.ByteString
 generateStream byteLen message privKey keys =
     if length message == 0
         then calculateStream byteLen =<< seeds
-        else calculateMessageStream byteLen msg =<< seeds
+        else M.join $ calculateMessageStream byteLen <$> msgBody <*> seeds
     where seeds = calculateSharedSeeds privKey $ excludeSelf privKey keys
-          msg = strBytes . padString byteLen $ message
+          msgBody = encodeMessage byteLen message
+
+-- Encodes a given string to a bytestring padded with a given length,
+-- with the actual message length encoded in the first 8 bytes of the
+-- bytestring
+encodeMessage :: Int -> String -> Either String B.ByteString
+encodeMessage byteLen message =
+    let msgLen = encode . length $ message
+        msg = strBytes . padString byteLen $ message
+    in if B.length msgLen == 8 -- 8 bytes should be enough for anyone
+    then Right . B.concat $ [msgLen, msg]
+    else Left "Invalid message size"
 
 excludeSelf :: PrivateKey -> [PublicKey] -> [PublicKey]
 excludeSelf priv pubs = filter (\pub -> pub /= calculatePublicKey priv) pubs
