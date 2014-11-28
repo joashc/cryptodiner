@@ -110,7 +110,7 @@ roundResultHandler ip port msg s  = do
         Right result -> forkIO $ parseResult result $ group state
     putMVar s state
     where parseResult r g = if isReservationRound (length g) (number r) == True
-            then reservationResultHandler ip port s (toggledBitsBS . xorStreams $ roundData r)
+            then reservationResultHandler ip port s (toggledBitsBS $ roundData r)
             else messageResultHandler ip port s $ roundData r
 
 reservationResultHandler :: IpAddress -> Int -> MVar PeerState -> [Int] -> IO ()
@@ -127,7 +127,7 @@ reservationResultHandler ip port s rs = do
     putMVar s state{ transmitRound = round, roundCounter = current + 1 }
     sendNextMessage ip port s
 
-messageResultHandler :: IpAddress -> Int -> MVar PeerState -> [B.ByteString] -> IO ()
+messageResultHandler :: IpAddress -> Int -> MVar PeerState -> B.ByteString -> IO ()
 messageResultHandler ip port s streams = do
     state <- takeMVar s
     print . parseMessageStreams $ streams
@@ -137,10 +137,9 @@ messageResultHandler ip port s streams = do
     then sendReservation ip (toEnum port :: PortNumber) s
     else sendNextMessage ip port s
 
-parseMessageStreams :: [B.ByteString] -> Either String B.ByteString
-parseMessageStreams streams = flip B.take messageBody <$> messageLen
-    where message = xorStreams streams
-          messageBody = B.drop 8 message
+parseMessageStreams :: B.ByteString -> Either String B.ByteString
+parseMessageStreams message = flip B.take messageBody <$> messageLen
+    where messageBody = B.drop 8 message
           messageLen = decode . B.take 8 $ message :: Either String Int
 
 sendNextMessage :: IpAddress -> Int -> MVar PeerState -> IO ()

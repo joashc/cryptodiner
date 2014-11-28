@@ -52,5 +52,5 @@ data PeerData = PeerData {
 
 data RoundResultData = RoundResultData {
     number :: Int,
-    roundData :: [B.ByteString]
+    roundData :: B.ByteString
 } deriving (Generic, Show)

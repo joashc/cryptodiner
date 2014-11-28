@@ -105,7 +105,7 @@ streamReciever stream s = do
 
 broadcastRoundResult :: Int -> Int -> [Participant] -> [B.ByteString] -> IO ()
 broadcastRoundResult portNo roundNum ps streams = withSocketsDo $ do
-    let roundResultMsg = Message RoundResult (encode $ RoundResultData roundNum streams) portNo
+    let roundResultMsg = Message RoundResult (encode $ RoundResultData roundNum (xorStreams streams)) portNo
     sendToAllPeers roundResultMsg ps
 
 sendPeerList :: MVar ServerState -> IO ()
