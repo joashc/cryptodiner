@@ -83,18 +83,19 @@ serverIO (Pause next) = do
   x <- liftIO getLine
   next
 
+messageHandler :: Message -> DcServer ()
+messageHandler PeerData = do
+  addPeer $ PS []
+  ss <- getServerState
+  if ss^.numPeers <= ss^.registeredPeers.to length
+  then pause
+  else sayString "Waiting for more peers!"
+messageHandler Stream = sayString "Stream"
+
 serverProg :: DcServer ()
 serverProg = do
   initServer
-  forever $ getMessage >>= handler
-    where handler PeerData = do
-            addPeer $ PS []
-            ss <- getServerState
-            if ss^.numPeers <= ss^.numRegisteredPeers
-            then pause
-            else sayString "Waiting for more peers!"
-          handler Stream = sayString "Stream"
-          numRegisteredPeers = registeredPeers.to length
+  forever $ getMessage >>= messageHandler
 
 serve :: DcServer a -> DcServerIO a
 serve = iterM serverIO
