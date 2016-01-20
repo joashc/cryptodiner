@@ -25,7 +25,10 @@ executable cryptodiner
                        crypto-random,
                        DRBG,
                        network,
-                       cereal
+                       cereal,
+                       lens,
+                       free,
+                       mtl
 
   hs-source-dirs:      crypto, network
   default-language:    Haskell2010
