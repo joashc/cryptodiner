@@ -1,7 +1,10 @@
 module DcServerIO where
 
 import DcServerSpec
+import System.IO
 import Messaging
+import Network
+import Control.Concurrent
 import DiffieHellman
 import DcServerFree
 import Control.Lens
@@ -18,6 +21,16 @@ peer = Participant pk (strBytes "5353") "localhost" 5435
 -- Here's the type our serverIO interpreter is going to map the free monad to
 type DcServerIO = ExceptT ServerError (StateT ServerState IO)
 
+getGroupSize :: IO Int
+getGroupSize = go
+  where go = do {
+    putStrLn "Number of peers:";
+    i <- getLine;
+    case (readMaybe i :: Maybe Int) of
+      Nothing -> putStrLn "Couldn't parse number of peers, try again." >> go
+      Just num -> return num
+}
+
 {-|An IO interpreter for the 'DcServer' free monad
 We write the interpreter with the type:
 
@@ -30,21 +43,19 @@ This is so we can use:
 instead of writing the interpreter directly in @Free f a@ and having to type @Pure@ and @Free@ all over the place
 -}
 serverIO :: DcServerOperator (DcServerIO next) -> DcServerIO next
-serverIO (InitServer next) = go
-  where go = do {
-    liftIO (putStrLn "Number of peers:");
-    i <- liftIO getLine;
-    case (readMaybe i :: Maybe Int) of
-      Nothing -> liftIO (putStrLn "Couldn't parse number of peers, try again.") >> go
-      Just num -> numPeers .= num >> next
-  }
+serverIO (InitServer next) = do
+  n <- liftIO getGroupSize
+  numPeers .= n
+  socket <- liftIO $ listenOn $ PortNumber 6969
+  listenSocket .= Just socket
+  next
 serverIO (SayString s next) = do
   liftIO $ putStrLn s
   next
 serverIO (GetMessage next) = do
   ss <- get
-  if ss^.numPeers == ss^.registeredPeers.to length then next $ Stream (strBytes "hey")
-  else next $ PeerJoin peer
+  msg <- listenForMessage $ ss^.listenSocket
+  next msg
 serverIO (GetServerState next) = get >>= next
 serverIO (AddPeer peer next) = do
   liftIO $ putStrLn "Adding peer"
@@ -60,6 +71,18 @@ serverIO (SendBroadcast ps msg next) = do
   next
 serverIO (Throw err next) = throwError err >> next
 
+listenForMessage :: Maybe Socket -> ExceptT ServerError (StateT ServerState IO) ServerMessage
+listenForMessage Nothing = throwError SocketError
+listenForMessage (Just s) = liftIO fetch
+  where fetch = do {
+    (handle, addr, portNum) <- accept s;
+    putStrLn $ show addr ++ show portNum  ++ " connected.";
+    c <- hGetContents handle;
+    case decodeServerMessage c of
+      Left e -> putStrLn ("Error parsing message: " ++ e) >> fetch
+      Right m -> return m
+}
+
 serve :: DcServer a -> DcServerIO a
 serve = iterM serverIO
 
@@ -68,5 +91,5 @@ reportResult (Left a) = print a
 
 -- | Run our Program
 runServer = do
-  (r, _) <- runStateT (runExceptT (serve serverProg)) $ SS 0 [] []
+  (r, _) <- runStateT (runExceptT (serve serverProg)) $ SS 0 [] [] Nothing
   reportResult r

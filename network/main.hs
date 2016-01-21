@@ -14,6 +14,9 @@ import DcNetwork
 import DiffieHellman
 import DcServerIO
 import qualified Data.ByteString as B (ByteString)
+import DcPeerFree
+import DcPeerSpec
+import DcPeerIO
 
 -- data ServerState = ServerState {
 --     peers :: [Participant],
@@ -28,11 +31,11 @@ import qualified Data.ByteString as B (ByteString)
 -- roundBytes :: Int
 -- roundBytes = 255
 
-main = runServer
+main = getArgs >>= parseArgs
 
--- parseArgs :: [String] -> IO ()
--- parseArgs ["-p"] = peerMode
--- parseArgs _ = peerMode
+parseArgs :: [String] -> IO ()
+parseArgs ["-p"] = runPeer
+parseArgs _ = runServer
 
 -- -- serverMode :: IO ()
 -- -- serverMode = withSocketsDo $ do

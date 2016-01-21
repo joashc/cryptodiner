@@ -1,5 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
-module Messaging (Participant(..), IpAddress, ServerStatus(..), Message(..), MessageType(..), decodeMessage, send, PeerData(..), RoundResultData(..), RoundStream, sendToPeer, ServerMessage(..), Broadcast(..)) where
+module Messaging (Participant(..), IpAddress, ServerStatus(..), Message(..), MessageType(..), decodeMessage, send, Nonce, RoundResultData(..), RoundStream, sendToPeer, ServerMessage(..), Broadcast(..), PeerData(..), sendToServer, decodeServerMessage, decodeBroadcast) where
 import Data.Serialize
 import System.IO
 import DiffieHellman
@@ -16,12 +16,13 @@ data MessageType = Ping | Peer | PeerList | ReservationStream | MessageStream | 
 
 type RoundStream = B.ByteString
 
+type Nonce = B.ByteString
+
 -- | The message types that may be sent to the server.
 data ServerMessage = PeerJoin Participant | Stream RoundStream deriving (Show, Generic, Eq)
 
 -- | Broadcasts are messages that are sent to all peers.
 data Broadcast = PeerListB [Participant] | RoundResultB RoundStream deriving (Show, Generic, Eq)
-
 
 instance Serialize ServerMessage
 instance Serialize Broadcast
@@ -30,8 +31,9 @@ instance Serialize GroupParameters
 instance Serialize Message
 instance Serialize MessageType
 instance Serialize Participant
-instance Serialize PeerData
 instance Serialize RoundResultData
+instance Serialize PeerData
+
 
 send :: HostName -> PortNumber -> Message -> IO()
 send ip portNumber m = withSocketsDo $ do
@@ -39,16 +41,33 @@ send ip portNumber m = withSocketsDo $ do
     hPutStrLn handle $ CS.unpack $ encode m
     hClose handle
 
-sendToPeer :: Broadcast -> Participant -> IO ThreadId
-sendToPeer m p = forkIO $ withSocketsDo $ do
+sendToPeer :: Broadcast -> Participant -> IO ()
+sendToPeer m p = forkIO withSocketsDo $ do
     handle <- connectTo (ipAddress p) (PortNumber (fromIntegral $ port p))
     hPutStrLn handle $ CS.unpack $ encode m
     hClose handle
 
+sendToServer :: ServerMessage -> IO ThreadId
+sendToServer m = forkIO $ withSocketsDo $ do
+  handle <- connectTo "localhost" $ PortNumber 6969
+  hPutStrLn handle $ CS.unpack $ encode m
+  hClose handle
+
 decodeMessage :: String -> Either String Message
 decodeMessage s = decode . BL.toStrict . C.pack $ s :: Either String Message
 
+decodeServerMessage :: String -> Either String ServerMessage
+decodeServerMessage s = decode . BL.toStrict . C.pack $ s :: Either String ServerMessage
+
+decodeBroadcast :: String -> Either String Broadcast
+decodeBroadcast s = decode . BL.toStrict . C.pack $ s :: Either String Broadcast
+
 type IpAddress = String
+
+data PeerData = PeerData {
+  publicKey :: PublicKey,
+  nonce :: B.ByteString
+} deriving (Generic, Show)
 
 data Participant = Participant {
     peerPubKey :: PublicKey,
@@ -61,11 +80,6 @@ data Message = Message {
     messageType :: MessageType,
     messageBody :: B.ByteString,
     portNum :: Int
-} deriving (Generic, Show)
-
-data PeerData = PeerData {
-    publicKey :: PublicKey,
-    nonce :: B.ByteString
 } deriving (Generic, Show)
 
 data RoundResultData = RoundResultData {

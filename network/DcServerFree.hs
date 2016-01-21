@@ -5,12 +5,14 @@ import Control.Monad.Free
 import Control.Lens
 import Messaging
 import Data.ByteString as B
+import Network (Socket)
 
 -- | Represents the server state. Initialized by the 'InitServer' operation.
 data ServerState = SS {
   _numPeers :: Int,
   _registeredPeers :: [Participant],
-  _roundStreams :: [RoundStream]
+  _roundStreams :: [RoundStream],
+  _listenSocket :: Maybe Socket
 } deriving (Show)
 
 -- Automagic some lenses with TH
@@ -32,7 +34,7 @@ data DcServerOperator next =
 type DcServer = Free DcServerOperator
 
 -- | Possible errors
-data ServerError = PeerDisconnected | Timeout deriving (Show)
+data ServerError = PeerDisconnected | Timeout | SocketError deriving (Show)
 
 -- Boilerplate functions for the server operators
 initServer :: DcServer ()
