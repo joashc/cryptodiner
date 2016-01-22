@@ -24,6 +24,7 @@ data DcServerOperator next =
     InitServer next
   | GetMessage (ServerMessage -> next)
   | AddPeer Participant next
+  | GetFullPeerList ([Participant] -> next)
   | AddStream RoundStream next
   | SendBroadcast [Participant] Broadcast next
   | GetServerState (ServerState -> next)
@@ -58,6 +59,9 @@ addStream s = liftF $ AddStream s ()
 
 getServerState :: DcServer ServerState
 getServerState = liftF $ GetServerState id
+
+getFullPeerList :: DcServer [Participant]
+getFullPeerList = liftF $ GetFullPeerList id
 
 throw :: ServerError -> DcServer ()
 throw err = liftF $ Throw err ()

@@ -10,7 +10,11 @@ import Messaging
 serverProg :: DcServer ()
 serverProg = do
   initServer
-  forever $ getMessage >>= messageHandler
+  peers <- getFullPeerList
+  sendBroadcast peers $ PeerListB peers
+
+listenForMessages :: DcServer()
+listenForMessages = forever $ getMessage >>= messageHandler
 
 messageHandler :: ServerMessage -> DcServer ()
 messageHandler (PeerJoin ps) = addPeer ps

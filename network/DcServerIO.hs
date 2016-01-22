@@ -67,10 +67,10 @@ instead of writing the interpreter directly in @Free f a@ and having to type @Pu
 serverIO :: DcServerOperator (DcServerIO next) -> DcServerIO next
 serverIO (InitServer next) = do
   n <- liftIO getGroupSize
-  ss <- readState
   socket <- liftIO $ listenOn $ PortNumber 6969
-  let initialized = ss & (numPeers .~ n) <$> (listenSocket .~ Just socket)
-  _ <- swapState initialized
+  let initialized = SS n [] [] (Just socket)
+  state <- get
+  liftIO . atomically $ putTMVar state initialized
   next
 serverIO (SayString s next) = do
   liftIO $ putStrLn s
@@ -92,6 +92,14 @@ serverIO (SendBroadcast ps msg next) = do
   liftIO $ putStrLn "Broadcasting..."
   liftIO $ mapM_ (sendToPeer msg) ps
   next
+serverIO (GetFullPeerList next) = do
+  state <- get
+  peers <- liftIO . atomically $ do
+    s <- readTMVar state
+    if s ^. numPeers == s ^. registeredPeers . to length
+      then return $ s ^. registeredPeers
+      else retry
+  next peers
 serverIO (Throw err next) = throwError err >> next
 
 addStreamIfNeeded :: RoundStream -> ServerState -> ServerState
@@ -126,6 +134,9 @@ reportResult (Left a) = print a
 
 -- | Run our Program
 runServer = do
-  serverStateTMVar <- liftIO . atomically $ newTMVar $ SS 0 [] [] Nothing
+  serverStateTMVar <- liftIO . atomically $ newEmptyTMVar
+  liftIO . forkIO $ do 
+    _ <- runStateT (runExceptT (serve listenForMessages)) serverStateTMVar
+    return ()
   (r, _) <- runStateT (runExceptT (serve serverProg)) serverStateTMVar
   reportResult r
