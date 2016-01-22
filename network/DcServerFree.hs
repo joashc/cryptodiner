@@ -6,6 +6,7 @@ import Control.Lens
 import Messaging
 import Data.ByteString as B
 import Network (Socket)
+import Control.Concurrent.STM
 
 -- | Represents the server state. Initialized by the 'InitServer' operation.
 data ServerState = SS {
@@ -13,7 +14,7 @@ data ServerState = SS {
   _registeredPeers :: [Participant],
   _roundStreams :: [RoundStream],
   _listenSocket :: Maybe Socket
-} deriving (Show)
+}
 
 -- Automagic some lenses with TH
 makeLenses ''ServerState
@@ -34,7 +35,7 @@ data DcServerOperator next =
 type DcServer = Free DcServerOperator
 
 -- | Possible errors
-data ServerError = PeerDisconnected | Timeout | SocketError deriving (Show)
+data ServerError = BadPeerState | PeerDisconnected | Timeout | SocketError deriving (Show)
 
 -- Boilerplate functions for the server operators
 initServer :: DcServer ()

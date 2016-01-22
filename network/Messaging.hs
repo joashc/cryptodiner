@@ -41,8 +41,8 @@ send ip portNumber m = withSocketsDo $ do
     hPutStrLn handle $ CS.unpack $ encode m
     hClose handle
 
-sendToPeer :: Broadcast -> Participant -> IO ()
-sendToPeer m p = forkIO withSocketsDo $ do
+sendToPeer :: Broadcast -> Participant -> IO ThreadId
+sendToPeer m p = forkIO $ withSocketsDo $ do
     handle <- connectTo (ipAddress p) (PortNumber (fromIntegral $ port p))
     hPutStrLn handle $ CS.unpack $ encode m
     hClose handle

@@ -12,25 +12,9 @@ serverProg = do
   initServer
   forever $ getMessage >>= messageHandler
 
--- | Collects a specified number of entities, and then performs an action
-collectAndThen :: DcServer () -> DcServer () -> Int -> Int -> DcServer ()
-collectAndThen collect action total current = do
-  when (total > current) collect
-  when (total - 1 == current) action
-
--- | Dispatch on message type
 messageHandler :: ServerMessage -> DcServer ()
--- | Accept peers until we have enough, then send the peer information to all peers
-messageHandler (PeerJoin ps) = do
-  ss <- getServerState
-  let peers = ss^.registeredPeers
-  collectAndThen (addPeer ps) (sendBroadcast peers $ PeerListB peers) (ss^.numPeers) (ss^.registeredPeers.to length)
--- | Collects streams until everyone's sent their stream, then send the combined stream to everyone
-messageHandler (Stream s) = do
-  ss <- getServerState
-  let numStreamsReceived = ss^.roundStreams.to length
-      requiredNum = ss^.numPeers
-  collectAndThen (addStream s) sendRoundResult requiredNum numStreamsReceived
+messageHandler (PeerJoin ps) = addPeer ps
+messageHandler (Stream s) = addStream s
 
 combineStreams :: [RoundStream] -> DcServer RoundStream
 combineStreams rs = return $ xorStreams rs

@@ -28,7 +28,8 @@ executable cryptodiner
                        cereal,
                        lens,
                        free,
-                       mtl
+                       mtl,
+                       stm
 
   hs-source-dirs:      crypto, network
   default-language:    Haskell2010

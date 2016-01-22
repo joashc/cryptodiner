@@ -24,13 +24,13 @@ type DcPeerIO = ExceptT PeerError (StateT PeerState IO)
 
 getPortNumber :: IO Int
 getPortNumber = try
-  where try = do {
-    putStrLn "Listen port:";
-    p <- getLine;
-    case (readMaybe p :: Maybe Int) of
-      Nothing -> putStrLn "Couldn't parse port number, try again." >> try
-      Just num -> return num
-}
+  where
+    try = do
+      putStrLn "Listen port:"
+      p <- getLine
+      case (readMaybe p :: Maybe Int) of
+        Nothing -> putStrLn "Couldn't parse port number, try again." >> try
+        Just num -> return num
 
 peerIOInterpreter :: DcPeerOperator (DcPeerIO next) -> DcPeerIO next
 peerIOInterpreter (InitPeer next) = do

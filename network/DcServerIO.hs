@@ -5,6 +5,7 @@ import System.IO
 import Messaging
 import Network
 import Control.Concurrent
+import Control.Concurrent.STM
 import DiffieHellman
 import DcServerFree
 import Control.Lens
@@ -19,17 +20,38 @@ pk = PublicKey 589430589430 (GroupParameters 5834759 753489573849)
 peer = Participant pk (strBytes "5353") "localhost" 5435
 
 -- Here's the type our serverIO interpreter is going to map the free monad to
-type DcServerIO = ExceptT ServerError (StateT ServerState IO)
+type DcServerIO = ExceptT ServerError (StateT (TMVar ServerState) IO)
 
 getGroupSize :: IO Int
 getGroupSize = go
-  where go = do {
-    putStrLn "Number of peers:";
-    i <- getLine;
-    case (readMaybe i :: Maybe Int) of
-      Nothing -> putStrLn "Couldn't parse number of peers, try again." >> go
-      Just num -> return num
-}
+  where
+    go = do
+      putStrLn "Number of peers:"
+      i <- getLine
+      case (readMaybe i :: Maybe Int) of
+        Nothing -> putStrLn "Couldn't parse number of peers, try again." >> go
+        Just num -> return num
+
+
+-- | Reads state from TMVar. This does not synchronise with other threads, use with caution.
+readState :: DcServerIO ServerState
+readState = do
+  state <- get
+  liftIO . atomically $ readTMVar state
+
+-- | Swaps state with a new state.
+swapState :: ServerState -> DcServerIO ServerState
+swapState s = do
+  state <- get
+  liftIO . atomically $ swapTMVar state s
+
+-- | Atomically modify state. Will block if TMVar is empty.
+modifyStateAtomically :: (ServerState -> ServerState) -> DcServerIO ()
+modifyStateAtomically f = do
+  state <- get
+  liftIO . atomically $ do
+    s <- takeTMVar state
+    putTMVar state $ f s
 
 {-|An IO interpreter for the 'DcServer' free monad
 We write the interpreter with the type:
@@ -45,25 +67,26 @@ instead of writing the interpreter directly in @Free f a@ and having to type @Pu
 serverIO :: DcServerOperator (DcServerIO next) -> DcServerIO next
 serverIO (InitServer next) = do
   n <- liftIO getGroupSize
-  numPeers .= n
+  ss <- readState
   socket <- liftIO $ listenOn $ PortNumber 6969
-  listenSocket .= Just socket
+  let initialized = ss & (numPeers .~ n) <$> (listenSocket .~ Just socket)
+  _ <- swapState initialized
   next
 serverIO (SayString s next) = do
   liftIO $ putStrLn s
   next
 serverIO (GetMessage next) = do
-  ss <- get
+  ss <- readState
   msg <- listenForMessage $ ss^.listenSocket
   next msg
-serverIO (GetServerState next) = get >>= next
+serverIO (GetServerState next) = readState >>= next
 serverIO (AddPeer peer next) = do
   liftIO $ putStrLn "Adding peer"
-  registeredPeers %= (:) peer
+  _ <- modifyStateAtomically $ addPeerIfNeeded peer
   next
 serverIO (AddStream s next) = do
   liftIO $ putStrLn "Adding stream"
-  roundStreams %= (:) s
+  _ <- modifyStateAtomically $ addStreamIfNeeded s
   next
 serverIO (SendBroadcast ps msg next) = do
   liftIO $ putStrLn "Broadcasting..."
@@ -71,17 +94,29 @@ serverIO (SendBroadcast ps msg next) = do
   next
 serverIO (Throw err next) = throwError err >> next
 
-listenForMessage :: Maybe Socket -> ExceptT ServerError (StateT ServerState IO) ServerMessage
+addStreamIfNeeded :: RoundStream -> ServerState -> ServerState
+addStreamIfNeeded stream s =
+  if numStreams < needed then s & roundStreams %~ (:) stream else s
+  where numStreams = s^.roundStreams.to length
+        needed = s ^. numPeers
+
+addPeerIfNeeded :: Participant -> ServerState -> ServerState
+addPeerIfNeeded p s =
+  if peerCount < needed then s & registeredPeers %~ (:) p else s
+  where peerCount = s ^. registeredPeers . to length
+        needed = s ^. numPeers
+
+listenForMessage :: Maybe Socket -> DcServerIO ServerMessage
 listenForMessage Nothing = throwError SocketError
 listenForMessage (Just s) = liftIO fetch
-  where fetch = do {
-    (handle, addr, portNum) <- accept s;
-    putStrLn $ show addr ++ show portNum  ++ " connected.";
-    c <- hGetContents handle;
-    case decodeServerMessage c of
-      Left e -> putStrLn ("Error parsing message: " ++ e) >> fetch
-      Right m -> return m
-}
+  where
+    fetch = do
+      (handle, addr, portNum) <- accept s
+      putStrLn $ show addr ++ show portNum  ++ " connected."
+      c <- hGetContents handle;
+      case decodeServerMessage c of
+        Left e -> putStrLn ("Error parsing message: " ++ e) >> fetch
+        Right m -> return m
 
 serve :: DcServer a -> DcServerIO a
 serve = iterM serverIO
@@ -91,5 +126,6 @@ reportResult (Left a) = print a
 
 -- | Run our Program
 runServer = do
-  (r, _) <- runStateT (runExceptT (serve serverProg)) $ SS 0 [] [] Nothing
+  serverStateTMVar <- liftIO . atomically $ newTMVar $ SS 0 [] [] Nothing
+  (r, _) <- runStateT (runExceptT (serve serverProg)) serverStateTMVar
   reportResult r
