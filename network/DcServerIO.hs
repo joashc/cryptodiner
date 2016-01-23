@@ -39,20 +39,6 @@ readState = do
   state <- get
   liftIO . atomically $ readTMVar state
 
--- | Swaps state with a new state.
-swapState :: ServerState -> DcServerIO ServerState
-swapState s = do
-  state <- get
-  liftIO . atomically $ swapTMVar state s
-
--- | Atomically modify state. Will block if TMVar is empty.
-modifyStateAtomically :: (ServerState -> ServerState) -> DcServerIO ()
-modifyStateAtomically f = do
-  state <- get
-  liftIO . atomically $ do
-    s <- takeTMVar state
-    putTMVar state $ f s
-
 {-|An IO interpreter for the 'DcServer' free monad
 We write the interpreter with the type:
 
@@ -80,39 +66,23 @@ serverIO (GetMessage next) = do
   msg <- listenForMessage $ ss^.listenSocket
   next msg
 serverIO (GetServerState next) = readState >>= next
-serverIO (AddPeer peer next) = do
-  liftIO $ putStrLn "Adding peer"
-  _ <- modifyStateAtomically $ addPeerIfNeeded peer
-  next
-serverIO (AddStream s next) = do
-  liftIO $ putStrLn "Adding stream"
-  _ <- modifyStateAtomically $ addStreamIfNeeded s
+serverIO (ModifyState f next) = do
+  state <- get
+  liftIO . atomically $ do
+    s <- takeTMVar state
+    putTMVar state $ f s
   next
 serverIO (SendBroadcast ps msg next) = do
   liftIO $ putStrLn "Broadcasting..."
   liftIO $ mapM_ (sendToPeer msg) ps
   next
-serverIO (GetFullPeerList next) = do
-  state <- get
-  peers <- liftIO . atomically $ do
-    s <- readTMVar state
-    if s ^. numPeers == s ^. registeredPeers . to length
-      then return $ s ^. registeredPeers
-      else retry
-  next peers
+serverIO (AwaitStateCondition cond next) = do
+  tmvar <- get
+  state <- liftIO . atomically $ do
+    s <- readTMVar tmvar
+    if cond s then return s else retry
+  next state
 serverIO (Throw err next) = throwError err >> next
-
-addStreamIfNeeded :: RoundStream -> ServerState -> ServerState
-addStreamIfNeeded stream s =
-  if numStreams < needed then s & roundStreams %~ (:) stream else s
-  where numStreams = s^.roundStreams.to length
-        needed = s ^. numPeers
-
-addPeerIfNeeded :: Participant -> ServerState -> ServerState
-addPeerIfNeeded p s =
-  if peerCount < needed then s & registeredPeers %~ (:) p else s
-  where peerCount = s ^. registeredPeers . to length
-        needed = s ^. numPeers
 
 listenForMessage :: Maybe Socket -> DcServerIO ServerMessage
 listenForMessage Nothing = throwError SocketError
@@ -120,7 +90,7 @@ listenForMessage (Just s) = liftIO fetch
   where
     fetch = do
       (handle, addr, portNum) <- accept s
-      putStrLn $ show addr ++ show portNum  ++ " connected."
+      putStrLn $ show addr ++ " : " ++ show portNum  ++ " connected."
       c <- hGetContents handle;
       case decodeServerMessage c of
         Left e -> putStrLn ("Error parsing message: " ++ e) >> fetch
@@ -132,11 +102,13 @@ serve = iterM serverIO
 reportResult (Right a) = putStrLn "SUCCESS!"
 reportResult (Left a) = print a
 
--- | Run our Program
+runWithState :: TMVar ServerState -> DcServer a -> IO (Either ServerError a, TMVar ServerState)
+runWithState state prog = runStateT (runExceptT (serve prog)) state
+
+-- | Starts the message listening loop and the main server thread
+runServer :: IO ()
 runServer = do
   serverStateTMVar <- liftIO . atomically $ newEmptyTMVar
-  liftIO . forkIO $ do 
-    _ <- runStateT (runExceptT (serve listenForMessages)) serverStateTMVar
-    return ()
-  (r, _) <- runStateT (runExceptT (serve serverProg)) serverStateTMVar
+  liftIO . forkIO . void $ runWithState serverStateTMVar listenForMessages
+  (r, _) <- runWithState serverStateTMVar serverProg
   reportResult r

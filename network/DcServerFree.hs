@@ -23,11 +23,10 @@ makeLenses ''ServerState
 data DcServerOperator next =
     InitServer next
   | GetMessage (ServerMessage -> next)
-  | AddPeer Participant next
-  | GetFullPeerList ([Participant] -> next)
-  | AddStream RoundStream next
+  | AwaitStateCondition (ServerState -> Bool) (ServerState -> next)
   | SendBroadcast [Participant] Broadcast next
   | GetServerState (ServerState -> next)
+  | ModifyState (ServerState -> ServerState) next
   | SayString String next
   | Throw ServerError next
   deriving (Functor)
@@ -42,6 +41,9 @@ data ServerError = BadPeerState | PeerDisconnected | Timeout | SocketError deriv
 initServer :: DcServer ()
 initServer = liftF $ InitServer ()
 
+modifyState :: (ServerState -> ServerState) -> DcServer()
+modifyState f = liftF $ ModifyState f ()
+
 getMessage :: DcServer ServerMessage
 getMessage = liftF $ GetMessage id
 
@@ -51,17 +53,11 @@ sendBroadcast ps b = liftF $ SendBroadcast ps b ()
 sayString :: String -> DcServer ()
 sayString s = liftF $ SayString s ()
 
-addPeer :: Participant -> DcServer ()
-addPeer p = liftF $ AddPeer p ()
-
-addStream :: RoundStream -> DcServer ()
-addStream s = liftF $ AddStream s ()
-
 getServerState :: DcServer ServerState
 getServerState = liftF $ GetServerState id
 
-getFullPeerList :: DcServer [Participant]
-getFullPeerList = liftF $ GetFullPeerList id
+awaitStateCondition :: (ServerState -> Bool) -> DcServer ServerState
+awaitStateCondition cond = liftF $ AwaitStateCondition cond id
 
 throw :: ServerError -> DcServer ()
 throw err = liftF $ Throw err ()
