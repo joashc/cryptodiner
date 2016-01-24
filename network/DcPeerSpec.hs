@@ -6,30 +6,35 @@ import DcNetwork
 import DcPeerFree
 import Messaging
 import DiffieHellman
+import RandomBytes
+import DcNodeOperator
 
 -- | Defines the peer semantics in the 'DcPeer' DSL
 peerProg :: DcPeer ()
 peerProg = do
-  initPeer
-  ps <- getPeerState
-  sendParticipantInfo $ participantInfo ps
-  forever $ receiveBroadcast >>= broadcastHandler
+  initState
+  ps <- getState
+  sendOutgoing () $ PeerJoin (participantInfo ps)
+  plaintext <- getUserInput
+  peers <- awaitPeers
+  sendOutgoing () $ Stream (strBytes plaintext)
 
 -- | Dispatch on message type
 broadcastHandler :: Broadcast -> DcPeer ()
 broadcastHandler (PeerListB ps) = updatePeerList ps
-broadcastHandler (RoundResultB r) = displayResult r
+broadcastHandler (RoundResultB r) = displayMessage $ show r
 
-participantInfo :: PeerState -> Maybe Participant
-participantInfo ps = do
-  priv <- ps^.privateKey
-  nonce <- ps^.ownNonce
-  port <- ps^.listenPort
-  let pub = calculatePublicKey priv
-  return $ Participant pub nonce "localhost" port
+awaitPeers :: DcPeer [Participant]
+awaitPeers = do
+  state <- awaitStateCondition $ \s -> s ^. peers . to length > 1
+  return $ state ^. peers
 
-sendParticipantInfo :: Maybe Participant -> DcPeer ()
-sendParticipantInfo Nothing = peerThrow InvalidPeerState
-sendParticipantInfo (Just p) = sendMessage $ PeerJoin p
+listenForBroadcasts :: DcPeer ()
+listenForBroadcasts = forever $ getIncoming >>= broadcastHandler
 
+participantInfo :: PeerState -> Participant
+participantInfo ps = Participant pub (ps^.ownNonce) "localhost" (ps^.listenPort)
+  where pub = calculatePublicKey $ ps^.privateKey
 
+updatePeerList :: [Participant] -> DcPeer ()
+updatePeerList p = modifyState $ \s -> s & peers .~ p

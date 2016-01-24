@@ -5,18 +5,21 @@ import Control.Monad.State
 import DcNetwork
 import DcServerFree
 import Messaging
+import DcNodeOperator
 
 -- | Defines the server semantics in the 'DcServer' DSL
 serverProg :: DcServer ()
 serverProg = do
-  initServer
-  sayString "Waiting for peers..."
+  initState
+  displayMessage "Waiting for peers..."
   peers <- awaitFullPeerList
-  sayString "All peers joined."
-  sendBroadcast peers $ PeerListB peers
+  displayMessage "All peers joined."
+  sendOutgoing peers $ PeerListB peers
+  streams <- awaitAllStreams
+  displayMessage $ show streams
 
 listenForMessages :: DcServer()
-listenForMessages = forever $ getMessage >>= messageHandler
+listenForMessages = forever $ getIncoming >>= messageHandler
 
 messageHandler :: ServerMessage -> DcServer ()
 messageHandler (PeerJoin ps) = modifyState $ addPeerIfNeeded ps
@@ -27,14 +30,19 @@ combineStreams rs = return $ xorStreams rs
 
 sendRoundResult :: DcServer ()
 sendRoundResult = do
-  ss <- getServerState
+  ss <- getState
   result <- combineStreams $ ss^.roundStreams
-  sendBroadcast (ss^.registeredPeers) (RoundResultB result)
+  sendOutgoing (ss^.registeredPeers) (RoundResultB result)
 
 awaitFullPeerList :: DcServer [Participant]
 awaitFullPeerList = do
   state <- awaitStateCondition (\s -> s ^. numPeers == s ^. registeredPeers . to length)
   return $ state ^. registeredPeers
+
+awaitAllStreams :: DcServer [RoundStream]
+awaitAllStreams = do
+  state <- awaitStateCondition (\s -> s ^. numPeers == s ^. roundStreams .to length)
+  return $ state ^. roundStreams
 
 addStreamIfNeeded :: RoundStream -> ServerState -> ServerState
 addStreamIfNeeded stream s =
@@ -47,4 +55,3 @@ addPeerIfNeeded p s =
   if peerCount < needed then s & registeredPeers %~ (:) p else s
   where peerCount = s ^. registeredPeers . to length
         needed = s ^. numPeers
-

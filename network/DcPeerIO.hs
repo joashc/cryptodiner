@@ -14,13 +14,16 @@ import Control.Monad.Except
 import Control.Monad.Free
 import Text.Read (readMaybe)
 import RandomBytes
+import Control.Concurrent.STM
+import Control.Concurrent
+import DcNodeOperator
 
 pk = PublicKey 589430589430 (GroupParameters 5834759 753489573849)
 
 peer = Participant pk (strBytes "5353") "localhost" 5435
 
 -- Here's the type our peer interpreter is going to map the free monad to
-type DcPeerIO = ExceptT PeerError (StateT PeerState IO)
+type DcPeerIO = ExceptT PeerError (StateT (TMVar PeerState) IO)
 
 getPortNumber :: IO Int
 getPortNumber = try
@@ -32,37 +35,50 @@ getPortNumber = try
         Nothing -> putStrLn "Couldn't parse port number, try again." >> try
         Just num -> return num
 
+readPeerState :: DcPeerIO PeerState
+readPeerState = do
+  state <- get
+  liftIO . atomically $ readTMVar state
+
 peerIOInterpreter :: DcPeerOperator (DcPeerIO next) -> DcPeerIO next
-peerIOInterpreter (InitPeer next) = do
+peerIOInterpreter (InitState next) = do
+  state <- get
   -- Generate private key
   randNum <- liftIO $ systemRandomNum 768
-  privateKey .= (Just $ PrivateKey randNum gp)
-  liftIO $ putStrLn "Generated private key"
+  let priv = PrivateKey randNum gp
   -- Generate nonce
   randBytes <- liftIO $ systemRandomBytes 256
-  ownNonce .= Just randBytes
   -- Get port number
   port <- liftIO getPortNumber
-  listenPort .= Just port
   -- Start listening on port
   socket <- liftIO $ listenOn $ PortNumber (toEnum port)
-  peerSocket .= Just socket
+  let initialized = PeerState priv [] 0 randBytes port socket
+  liftIO . atomically $ putTMVar state initialized
   next
-peerIOInterpreter (SendMessage m next) = do
-  liftIO $ putStrLn "Sending MESSAGE"
+peerIOInterpreter (SendOutgoing _ m next) = do
   liftIO $ sendToServer m
   next
-peerIOInterpreter (UpdatePeerList ps next) = do
-  liftIO $ putStrLn "Updating peer list"
-  peers .= ps
-  liftIO $ print ps
-  next
-peerIOInterpreter (ReceiveBroadcast next) = do
-  ps <- get
+peerIOInterpreter (GetIncoming next) = do
+  ps <- readPeerState
   broadcast <- listenForBroadcast $ ps^.peerSocket
   next broadcast
-peerIOInterpreter (GetPeerState next) = get >>= next
-peerIOInterpreter (PeerThrow err next) = throwError err >> next
+peerIOInterpreter (ModifyState f next) = do
+  state <- get
+  liftIO . atomically $ do
+    s <- takeTMVar state
+    putTMVar state $ f s
+  next
+peerIOInterpreter (AwaitStateCondition cond next) = do
+  tmvar <- get
+  state <- liftIO . atomically $ do
+    s <- readTMVar tmvar
+    if cond s then return s else retry
+  next state
+peerIOInterpreter (GetUserInput next) = do
+  userInput <- liftIO getLine
+  next userInput
+peerIOInterpreter (GetState next) = readPeerState >>= next
+peerIOInterpreter (Throw err next) = throwError err >> next
 
 peerIO :: DcPeer a -> DcPeerIO a
 peerIO = iterM peerIOInterpreter
@@ -72,12 +88,13 @@ reportResult (Left a) = print a
 
 -- | Run our Program
 runPeer = do
-  (r, _) <- runStateT (runExceptT (peerIO peerProg)) initialPeerState
+  peerStateTMVar <- liftIO . atomically $ newEmptyTMVar
+  liftIO . forkIO . void $ runStateT (runExceptT (peerIO listenForBroadcasts)) peerStateTMVar
+  (r, _) <- runStateT (runExceptT (peerIO peerProg)) peerStateTMVar
   reportResult r
 
-listenForBroadcast :: Maybe Socket -> DcPeerIO Broadcast
-listenForBroadcast Nothing = throwError PeerSocketError
-listenForBroadcast (Just s) = liftIO fetch
+listenForBroadcast :: Socket -> DcPeerIO Broadcast
+listenForBroadcast s = liftIO fetch
   where fetch = do {
     (handle, addr, portNum) <- accept s;
     c <- hGetContents handle;

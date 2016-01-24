@@ -14,10 +14,7 @@ import Control.Monad.Except
 import Control.Monad.Free
 import Text.Read (readMaybe)
 import RandomBytes (strBytes)
-
-pk = PublicKey 589430589430 (GroupParameters 5834759 753489573849)
-
-peer = Participant pk (strBytes "5353") "localhost" 5435
+import DcNodeOperator
 
 -- Here's the type our serverIO interpreter is going to map the free monad to
 type DcServerIO = ExceptT ServerError (StateT (TMVar ServerState) IO)
@@ -51,28 +48,28 @@ This is so we can use:
 instead of writing the interpreter directly in @Free f a@ and having to type @Pure@ and @Free@ all over the place
 -}
 serverIO :: DcServerOperator (DcServerIO next) -> DcServerIO next
-serverIO (InitServer next) = do
+serverIO (InitState next) = do
   n <- liftIO getGroupSize
   socket <- liftIO $ listenOn $ PortNumber 6969
   let initialized = SS n [] [] (Just socket)
   state <- get
   liftIO . atomically $ putTMVar state initialized
   next
-serverIO (SayString s next) = do
+serverIO (DisplayMessage s next) = do
   liftIO $ putStrLn s
   next
-serverIO (GetMessage next) = do
+serverIO (GetIncoming next) = do
   ss <- readState
   msg <- listenForMessage $ ss^.listenSocket
   next msg
-serverIO (GetServerState next) = readState >>= next
+serverIO (GetState next) = readState >>= next
 serverIO (ModifyState f next) = do
   state <- get
   liftIO . atomically $ do
     s <- takeTMVar state
     putTMVar state $ f s
   next
-serverIO (SendBroadcast ps msg next) = do
+serverIO (SendOutgoing ps msg next) = do
   liftIO $ putStrLn "Broadcasting..."
   liftIO $ mapM_ (sendToPeer msg) ps
   next
