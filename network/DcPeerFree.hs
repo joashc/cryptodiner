@@ -2,10 +2,10 @@
 module DcPeerFree where
 
 import Control.Monad.Free.TH
+import Data.ByteString as B (ByteString)
 import Control.Monad.Free
 import Control.Lens
 import Messaging
-import Data.ByteString as B
 import DiffieHellman
 import Network (PortNumber, Socket)
 import DcNodeOperator
@@ -17,16 +17,25 @@ data PeerState = PeerState {
   _roundNum :: Int,
   _ownNonce :: Nonce,
   _listenPort :: Int,
-  _peerSocket :: Socket
+  _reservation :: Maybe Int,
+  _peerSocket :: Socket,
+  _roundResult :: Maybe RoundStream,
+  _cachedMessage :: Either String String
 } deriving (Show)
 
 -- Automagic some lenses with TH
 makeLenses ''PeerState
 
-data PeerError = PeerSocketError | ServerDisconnected | ServerTimeout | InvalidPeerState deriving (Show)
+data PeerError = StreamGenerationError String | ReservationError String | PeerSocketError | ServerDisconnected | ServerTimeout | InvalidPeerState deriving (Show)
 
 -- | Peer operations
 type DcPeerOperator = DcNodeOperator PeerState Broadcast ServerMessage () PeerError
 
 -- | The free monad over 'DcPeerOperator'
 type DcPeer = Free DcPeerOperator
+
+numPeers :: PeerState -> Int
+numPeers s = s ^. peers . to length
+
+nonces :: PeerState -> [B.ByteString]
+nonces s = s ^. peers . to (map peerNonce)

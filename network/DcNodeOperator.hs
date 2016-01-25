@@ -15,6 +15,7 @@ data DcNodeOperator state incoming outgoing recipient error next =
   | GetUserInput (String -> next)
   | ModifyState (state -> state) next
   | DisplayMessage String next
+  | GetRandomInt Int (Int -> next)
   | Throw error next
   deriving (Functor)
 

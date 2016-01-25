@@ -63,6 +63,7 @@ serverIO (GetIncoming next) = do
   msg <- listenForMessage $ ss^.listenSocket
   next msg
 serverIO (GetState next) = readState >>= next
+serverIO (GetUserInput next) = liftIO getLine >>= next
 serverIO (ModifyState f next) = do
   state <- get
   liftIO . atomically $ do
@@ -80,6 +81,7 @@ serverIO (AwaitStateCondition cond next) = do
     if cond s then return s else retry
   next state
 serverIO (Throw err next) = throwError err >> next
+
 
 listenForMessage :: Maybe Socket -> DcServerIO ServerMessage
 listenForMessage Nothing = throwError SocketError

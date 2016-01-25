@@ -52,7 +52,7 @@ peerIOInterpreter (InitState next) = do
   port <- liftIO getPortNumber
   -- Start listening on port
   socket <- liftIO $ listenOn $ PortNumber (toEnum port)
-  let initialized = PeerState priv [] 0 randBytes port socket
+  let initialized = PeerState priv [] (-1) randBytes port Nothing socket Nothing (Left "No message entered")
   liftIO . atomically $ putTMVar state initialized
   next
 peerIOInterpreter (SendOutgoing _ m next) = do
@@ -62,6 +62,9 @@ peerIOInterpreter (GetIncoming next) = do
   ps <- readPeerState
   broadcast <- listenForBroadcast $ ps^.peerSocket
   next broadcast
+peerIOInterpreter (DisplayMessage m next) = do
+  liftIO $ putStrLn m
+  next
 peerIOInterpreter (ModifyState f next) = do
   state <- get
   liftIO . atomically $ do
@@ -77,9 +80,11 @@ peerIOInterpreter (AwaitStateCondition cond next) = do
 peerIOInterpreter (GetUserInput next) = do
   userInput <- liftIO getLine
   next userInput
+peerIOInterpreter (GetRandomInt max next) = do
+  num <- liftIO $ randomNumber max
+  next num
 peerIOInterpreter (GetState next) = readPeerState >>= next
 peerIOInterpreter (Throw err next) = throwError err >> next
-
 peerIO :: DcPeer a -> DcPeerIO a
 peerIO = iterM peerIOInterpreter
 

@@ -15,8 +15,7 @@ serverProg = do
   peers <- awaitFullPeerList
   displayMessage "All peers joined."
   sendOutgoing peers $ PeerListB peers
-  streams <- awaitAllStreams
-  displayMessage $ show streams
+  forever $ awaitAllStreams >>= sendRoundResult
 
 listenForMessages :: DcServer()
 listenForMessages = forever $ getIncoming >>= messageHandler
@@ -28,11 +27,12 @@ messageHandler (Stream s) = modifyState $ addStreamIfNeeded s
 combineStreams :: [RoundStream] -> DcServer RoundStream
 combineStreams rs = return $ xorStreams rs
 
-sendRoundResult :: DcServer ()
-sendRoundResult = do
-  ss <- getState
-  result <- combineStreams $ ss^.roundStreams
-  sendOutgoing (ss^.registeredPeers) (RoundResultB result)
+sendRoundResult :: [RoundStream] -> DcServer ()
+sendRoundResult rs = do
+  result <- combineStreams rs
+  state <- getState
+  modifyState $ roundStreams .~ []
+  sendOutgoing (state^.registeredPeers) (RoundResultB result)
 
 awaitFullPeerList :: DcServer [Participant]
 awaitFullPeerList = do

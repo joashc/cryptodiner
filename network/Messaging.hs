@@ -22,7 +22,7 @@ type Nonce = B.ByteString
 data ServerMessage = PeerJoin Participant | Stream RoundStream deriving (Show, Generic, Eq)
 
 -- | Broadcasts are messages that are sent to all peers.
-data Broadcast = PeerListB [Participant] | RoundResultB RoundStream deriving (Show, Generic, Eq)
+data Broadcast = PeerListB [Participant] | RoundResultB RoundStream | ReservationResult RoundStream deriving (Show, Generic, Eq)
 
 instance Serialize ServerMessage
 instance Serialize Broadcast
