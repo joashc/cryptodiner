@@ -22,15 +22,12 @@ peerProg = do
   sendOutgoing () $ PeerJoin (participantInfo ps)
   peers <- awaitPeers
   negotiateReservation
-  forever $ getUserInput >>= displayMessage
-
-
+  forever $ awaitRoundResult >>= handleRoundResult
 
 -- | Dispatch on message type
 broadcastHandler :: Broadcast -> DcPeer ()
 broadcastHandler (PeerListB ps) = updatePeerList ps
-broadcastHandler (RoundResultB r) = handleRoundResult r
-
+broadcastHandler (RoundResultB r) = updateRoundResult r
 
 awaitRoundResult :: DcPeer RoundStream
 awaitRoundResult = do
@@ -62,14 +59,16 @@ updatePeerList :: [Participant] -> DcPeer ()
 updatePeerList p = modifyState $ peers .~ p
 
 updateRoundResult :: RoundStream -> DcPeer ()
-updateRoundResult r = modifyState $ (roundResult .~ Just r) <$> (roundNum +~ 1)
+updateRoundResult r = do
+  state <- getState
+  displayMessage $ "Round:" ++ show (state ^. roundNum)
+  modifyState $ (roundResult .~ Just r) <$> (roundNum +~ 1)
 
 handleRoundResult :: RoundStream -> DcPeer ()
 handleRoundResult r = do
-  updateRoundResult r
   displayMessage $ show (parseMessageStreams r)
   state <- getState
-  if isResRound state
+  if isResRoundNext state
   then negotiateReservation
   else sendNextStream
 
@@ -114,3 +113,4 @@ negotiateReservation = do
   let transmitRound = roundToTransmit (state ^. roundNum) (toggledBitsBS resData) =<< state^.reservation
   modifyState $ reservation .~ transmitRound
   displayMessage $ "Transmitting in round: " ++ show transmitRound
+  sendNextStream

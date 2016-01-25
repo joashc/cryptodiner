@@ -44,6 +44,5 @@ isResRoundNext :: PeerState -> Bool
 isResRoundNext state = isReservationRound (numPeers state) (state ^. roundNum . to (+ 1))
 
 roundToTransmit :: Int -> [Int] -> Int -> Maybe Int
-roundToTransmit current rs r = (+) nextRound <$> resIndex
-    where nextRound = current + 1
-          resIndex = elemIndex r $ sort rs
+roundToTransmit current rs r = (+) current <$> resIndex
+    where resIndex = elemIndex r $ sort rs
